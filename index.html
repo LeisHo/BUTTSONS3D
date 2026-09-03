@@ -247,6 +247,7 @@
 <script type="module">
 import * as THREE from "three";
 import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 (function () {
   "use strict";
@@ -266,19 +267,6 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
   }
 
   // ---- Settings ----
-  // A throwaway camera, positioned/aimed the same way the scene's real default view
-  // used to be set up (via lookAt) before rotation became independently slider-driven --
-  // read back as Euler degrees so the rotation sliders start at a look that matches the
-  // old lookAt-based default, instead of a guessed literal.
-  var _defaultCam = new THREE.PerspectiveCamera();
-  _defaultCam.position.set(0, 28, 36);
-  _defaultCam.lookAt(0, 0, 0);
-  var _defaultCamRotDeg = {
-    x: THREE.MathUtils.radToDeg(_defaultCam.rotation.x),
-    y: THREE.MathUtils.radToDeg(_defaultCam.rotation.y),
-    z: THREE.MathUtils.radToDeg(_defaultCam.rotation.z)
-  };
-
   var DEFAULT_SETTINGS = {
     colCount: 8,
     rowCount: 5,
@@ -316,9 +304,6 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
     cameraHeight: 28,
     cameraDistance: 36,
     cameraFov: 45,
-    cameraRotX: Math.round(_defaultCamRotDeg.x * 100) / 100,
-    cameraRotY: Math.round(_defaultCamRotDeg.y * 100) / 100,
-    cameraRotZ: Math.round(_defaultCamRotDeg.z * 100) / 100,
 
     cellShadingEnabled: false,
     toonBands: 4,
@@ -345,7 +330,7 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
       grid: ["colCount", "rowCount", "colSpacing", "rowSpacing", "rowXOffset", "cumulativeRowOffset"],
       button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "extensionRadius", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
-      camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraRotX", "cameraRotY", "cameraRotZ"],
+      camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
       shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling"],
       debug: ["debugWireframe"]
@@ -393,9 +378,6 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
     { key: "cameraHeight", label: "Camera Y Position", min: -100, max: 100, step: 0.1, unit: "(x)", camera: true },
     { key: "cameraDistance", label: "Camera Z Position", min: -150, max: 150, step: 0.1, unit: "(x)", camera: true },
     { key: "cameraFov", label: "Camera FOV", min: 20, max: 100, step: 1, unit: "(Deg)", camera: true },
-    { key: "cameraRotX", label: "Camera Rotation X", min: -180, max: 180, step: 0.5, unit: "(Deg)", camera: true },
-    { key: "cameraRotY", label: "Camera Rotation Y", min: -180, max: 180, step: 0.5, unit: "(Deg)", camera: true },
-    { key: "cameraRotZ", label: "Camera Rotation Z", min: -180, max: 180, step: 0.5, unit: "(Deg)", camera: true },
 
     { key: "toonBands", label: "Toon Shading Bands", min: 2, max: 8, step: 1, unit: "", integer: true, material: true },
     { key: "toonShadowFloor", label: "Toon Shadow Floor Brightness", min: 0, max: 100, step: 1, unit: "%", material: true },
@@ -496,6 +478,16 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
   scene.background = new THREE.Color(0x14151a);
 
   var camera = new THREE.PerspectiveCamera(settings.cameraFov, window.innerWidth / window.innerHeight, 0.1, 500);
+
+  // Mouse orbit/pan/zoom (replaces the old Camera Rotation X/Y/Z sliders entirely --
+  // OrbitControls owns the camera's orientation from here on, updating camera.position/
+  // .quaternion itself every frame based on drag/wheel input; the X/Y/Z Position sliders
+  // still work, but as a "jump to this position" default/reset rather than the only way to
+  // move the camera -- see applyCameraSettings()'s controls.update() call after each set).
+  var controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
 
   // Directional + ambient light, always both present (no longer tied to the cell-shading
   // toggle) -- real lit shading so a cylinder's top face and side faces read as visibly
@@ -715,12 +707,11 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
   function applyCameraSettings() {
     camera.fov = settings.cameraFov;
     camera.position.set(settings.cameraX, settings.cameraHeight, settings.cameraDistance);
-    camera.rotation.set(
-      THREE.MathUtils.degToRad(settings.cameraRotX),
-      THREE.MathUtils.degToRad(settings.cameraRotY),
-      THREE.MathUtils.degToRad(settings.cameraRotZ)
-    );
     camera.updateProjectionMatrix();
+    // Re-syncs OrbitControls' internal spherical state to this new position (relative to
+    // its target) -- without this it would fight the slider on the very next drag/frame,
+    // snapping back toward wherever it last thought the camera was.
+    controls.update();
   }
 
   // ---- Interaction: press = compress down instantly, swap to the modeled PRESSED
@@ -767,18 +758,42 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
     return hits.length ? hits[0].object.userData.cell : null;
   }
 
+  // A left-drag now also orbits the camera (OrbitControls listens on this same canvas),
+  // so a drag that happens to START on top of a button needs to NOT register as a click --
+  // press visually right away for instant tactile feedback (matches the old feel), but
+  // cancel it back out with no gain change the moment the pointer moves past a small
+  // threshold, treating that as "the user meant to orbit," not "click this button."
+  var DRAG_CANCEL_PX = 6;
+
+  function cancelPressCell(cell) {
+    if (!cell.pressed) return;
+    cell.pressed = false;
+    cell.unpressedMesh.visible = true;
+    cell.pressedMesh.visible = false;
+    tweenTo(cell, capRestY(cell), settings.releaseMs);
+  }
+
   canvas.addEventListener("pointerdown", function (e) {
     var cell = pickCell(e.clientX, e.clientY);
     if (!cell) return;
-    activePointers.set(e.pointerId, cell);
+    activePointers.set(e.pointerId, { cell: cell, startX: e.clientX, startY: e.clientY, dragging: false });
     try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
     pressCell(cell);
   });
+  canvas.addEventListener("pointermove", function (e) {
+    var entry = activePointers.get(e.pointerId);
+    if (!entry || entry.dragging) return;
+    var dx = e.clientX - entry.startX, dy = e.clientY - entry.startY;
+    if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_PX) {
+      entry.dragging = true;
+      cancelPressCell(entry.cell);
+    }
+  });
   function handlePointerEnd(e) {
-    var cell = activePointers.get(e.pointerId);
-    if (!cell) return;
+    var entry = activePointers.get(e.pointerId);
+    if (!entry) return;
     activePointers.delete(e.pointerId);
-    releaseCell(cell);
+    if (!entry.dragging) releaseCell(entry.cell);
   }
   canvas.addEventListener("pointerup", handlePointerEnd);
   canvas.addEventListener("pointercancel", handlePointerEnd);
@@ -816,6 +831,7 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
       }
       updateExtension(c);
     });
+    controls.update(); // required every frame while damping is enabled
     renderer.render(scene, camera);
   }
 
