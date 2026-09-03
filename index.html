@@ -432,11 +432,22 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
   function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
   var LOCAL_KEY = "buttsons3dSettings";
+  // Bumped whenever a setting's MEANING changes underneath its existing key (not just when
+  // a new key/group is added -- the backfill below already handles that case safely). The
+  // baseRadius/baseHeight/buttonRadius/buttonHeight switch from literal cylinder dimensions
+  // to scale-relative-to-the-real-model factors is exactly this: an old saved 0.5 silently
+  // meant something completely different afterward, badly mis-scaling/positioning the whole
+  // scene with no error -- reported as "camera very far away, no buttons in sight, lighting
+  // does nothing" (that last part being a downstream symptom: nothing lit was ever on
+  // screen). A mismatched version discards the old save entirely rather than merging
+  // semantically incompatible values.
+  var SETTINGS_SCHEMA_VERSION = 2;
   function loadSavedDefaults() {
     try {
       var raw = localStorage.getItem(LOCAL_KEY);
       if (!raw) return deepClone(DEFAULT_SETTINGS);
       var parsed = JSON.parse(raw);
+      if (parsed._schemaVersion !== SETTINGS_SCHEMA_VERSION) return deepClone(DEFAULT_SETTINGS);
       var merged = Object.assign(deepClone(DEFAULT_SETTINGS), parsed);
       // Backfill only -- a saved dump from before a slider/group existed silently
       // overwrites _groupOrder/_itemOrderByGroup wholesale via the shallow Object.assign
@@ -1199,7 +1210,8 @@ import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
     var btn = this;
     savePanelGeometry();
     try {
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(settings));
+      var toSave = Object.assign({}, settings, { _schemaVersion: SETTINGS_SCHEMA_VERSION });
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(toSave));
       savedDefaults = deepClone(settings);
       flashButton(btn, "Saved (local)!");
     } catch (e) {
