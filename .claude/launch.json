@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "buttsons3d",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["scripts/active/dev_server.py"],
+      "port": 8938
+    }
+  ]
+}

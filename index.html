@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Buttsons3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    background: var(--app-bg-color);
+  }
+  :root {
+    --app-bg-color: #14151a;
+    --dev-title-font-size: 13px;
+    --dev-tab-font-size: 11.5px;
+    --dev-group-title-font-size: 12px;
+    --dev-setting-title-font-size: 12px;
+    --dev-body-font-size: 12px;
+    --dev-panel-opacity: 0.92;
+    --dev-bg-color: #0f1014;
+    --dev-title-color: #9fd3ff;
+    --dev-text-color: #e6e6e6;
+  }
+  #sceneCanvas {
+    position: fixed;
+    inset: 0;
+    display: block;
+  }
+
+  /* ---- Dev panel (mechanics ported from the BUTTSONS project's own dev panel) ---- */
+  body:not(.dev-enabled) #devPanel { display: none !important; }
+  body.dev-hidden #devPanel { display: none !important; }
+
+  #devPanel {
+    position: fixed;
+    display: flex;
+    flex-direction: column;
+    background: var(--dev-bg-color);
+    opacity: var(--dev-panel-opacity);
+    border: 1px solid #333a4a;
+    border-radius: 6px;
+    color: var(--dev-text-color);
+    font: var(--dev-body-font-size)/1.4 system-ui, sans-serif;
+    z-index: 1000;
+    min-width: 260px;
+    min-height: 160px;
+    overflow: hidden;
+  }
+  #devPanel.collapsed .dev-body { display: none; }
+  #devPanel .dev-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    cursor: move;
+    background: #1c1e24;
+    user-select: none;
+  }
+  #devPanel .dev-title {
+    font-size: var(--dev-title-font-size);
+    font-weight: 700;
+    color: var(--dev-title-color);
+  }
+  #devPanel .dev-collapse-btn {
+    background: none;
+    border: none;
+    color: var(--dev-text-color);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 2px 6px;
+  }
+  #devPanel .dev-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1;
+  }
+  .dev-tabs {
+    display: flex;
+    border-bottom: 1px solid #262932;
+  }
+  .dev-tab-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    color: var(--dev-text-color);
+    font-size: var(--dev-tab-font-size);
+    padding: 6px 0;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  #devPanel.tab-desktop .dev-tab-btn[data-tab="desktop"],
+  #devPanel.tab-mobile .dev-tab-btn[data-tab="mobile"] {
+    opacity: 1;
+    border-bottom: 2px solid var(--dev-title-color);
+  }
+  .dev-actions {
+    display: flex;
+    gap: 6px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #262932;
+  }
+  .dev-actions button {
+    flex: 1;
+    background: #262932;
+    border: 1px solid #333a4a;
+    color: var(--dev-text-color);
+    border-radius: 4px;
+    padding: 5px 0;
+    cursor: pointer;
+    font-size: var(--dev-body-font-size);
+  }
+  .dev-actions button:hover { background: #33374a; }
+  #devSaveStatus {
+    padding: 0 8px 4px;
+    font-size: 10px;
+    opacity: 0.6;
+  }
+  #devGroups {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+  }
+  .dev-group.dragging-item { opacity: 0.4; }
+  .dev-group-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: #1c1e24;
+    cursor: pointer;
+    user-select: none;
+  }
+  .dev-group-header .drag-grip { cursor: grab; opacity: 0.5; }
+  .dev-group-title {
+    font-size: var(--dev-group-title-font-size);
+    font-weight: 600;
+    flex: 1;
+  }
+  .dev-group-caret { opacity: 0.6; font-size: 10px; }
+  .dev-group.collapsed .dev-group-body { display: none; }
+  .dev-group-body { padding: 6px 8px; }
+  .dev-tab-desktop, .dev-tab-mobile { display: none !important; }
+  #devPanel.tab-desktop .dev-tab-desktop,
+  #devPanel.tab-mobile .dev-tab-mobile { display: flex !important; }
+  .dev-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 0;
+  }
+  .dev-row.dragging-item { opacity: 0.4; }
+  .dev-row .drag-grip { cursor: grab; opacity: 0.4; font-size: 10px; }
+  .dev-row-main { flex: 1; min-width: 0; }
+  .dev-setting-label {
+    font-size: var(--dev-setting-title-font-size);
+    display: block;
+    margin-bottom: 2px;
+  }
+  .dev-controls { display: flex; align-items: center; gap: 6px; }
+  .dev-controls input[type="range"] { flex: 1; min-width: 0; }
+  .dev-value {
+    font-size: var(--dev-body-font-size);
+    min-width: 3.5em;
+    text-align: right;
+    cursor: text;
+    padding: 1px 3px;
+    border-radius: 3px;
+  }
+  .dev-value:hover { background: rgba(255,255,255,0.08); }
+  .dev-value input {
+    width: 4.5em;
+    background: #000;
+    color: var(--dev-text-color);
+    border: 1px solid #444;
+    font: inherit;
+  }
+  .dev-color-row input[type="color"] {
+    width: 28px;
+    height: 22px;
+    border: none;
+    background: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  .dev-checkbox-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  /* Resize/move hit zones */
+  .dev-resize-edge { position: absolute; z-index: 2; }
+  .dev-resize-edge.n { top: -3px; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+  .dev-resize-edge.s { bottom: -3px; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
+  .dev-resize-edge.e { right: -3px; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+  .dev-resize-edge.w { left: -3px; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
+  .dev-resize-corner { position: absolute; z-index: 3; width: 10px; height: 10px; }
+  .dev-resize-corner.nw { top: -3px; left: -3px; cursor: nwse-resize; }
+  .dev-resize-corner.ne { top: -3px; right: -3px; cursor: nesw-resize; }
+  .dev-resize-corner.sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
+  .dev-resize-corner.se { bottom: -3px; right: -3px; cursor: nwse-resize; }
+</style>
+</head>
+<body>
+
+<canvas id="sceneCanvas"></canvas>
+
+<div id="devPanel">
+  <div class="dev-resize-edge n"></div>
+  <div class="dev-resize-edge s"></div>
+  <div class="dev-resize-edge e"></div>
+  <div class="dev-resize-edge w"></div>
+  <div class="dev-resize-corner nw"></div>
+  <div class="dev-resize-corner ne"></div>
+  <div class="dev-resize-corner sw"></div>
+  <div class="dev-resize-corner se"></div>
+  <div class="dev-titlebar">
+    <span class="dev-title">DEV</span>
+    <button class="dev-collapse-btn" id="devCollapseBtn" title="Collapse">&#9650;</button>
+  </div>
+  <div class="dev-body">
+    <div class="dev-tabs">
+      <button class="dev-tab-btn" data-tab="desktop">Desktop</button>
+      <button class="dev-tab-btn" data-tab="mobile">Mobile</button>
+    </div>
+    <div class="dev-actions">
+      <button id="btnCopy">Copy Settings</button>
+      <button id="btnSave">Save Settings</button>
+      <button id="btnReset">Reset</button>
+    </div>
+    <div id="devSaveStatus">Local-only for now -- git-tracked sync not wired up yet for this project.</div>
+    <div id="devGroups"></div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+
+(function () {
+  "use strict";
+
+  // ---- Dev gating (CLAUDE.md 12b) ----
+  function isDevAllowed() {
+    var h = location.hostname;
+    if (h === "localhost" || h === "127.0.0.1" || location.protocol === "file:") return true;
+    try {
+      return new URLSearchParams(location.search).get("dev") === "1";
+    } catch (e) {
+      return /[?&]dev=1(&|$)/.test(location.search);
+    }
+  }
+  if (isDevAllowed()) {
+    document.body.classList.add("dev-enabled");
+  }
+
+  // ---- Settings ----
+  var DEFAULT_SETTINGS = {
+    colCount: 8,
+    rowCount: 5,
+    colSpacing: 1.4,
+    rowSpacing: 1.4,
+
+    baseRadius: 0.5,
+    baseHeight: 0.25,
+    buttonRadius: 0.42,
+    buttonHeight: 0.3,
+    clickIntensity: 0.12,
+    heightGainPerClick: 0.03,
+    holdThresholdMs: 500,
+    releaseMs: 180,
+
+    groundSize: 40,
+    groundColor: "#22242c",
+    baseColor: "#3a3f4c",
+    buttonColor: "#d9363e",
+
+    cameraDistance: 9,
+    cameraHeight: 7,
+    cameraFov: 45,
+
+    cellShadingEnabled: false,
+    toonBands: 4,
+
+    debugWireframe: false,
+
+    devTitleFontSize: 13,
+    devTabFontSize: 11.5,
+    devGroupTitleFontSize: 12,
+    devSettingTitleFontSize: 12,
+    devBodyFontSize: 12,
+    devPanelOpacity: 0.92,
+    devBgColor: "#0f1014",
+    devTitleColor: "#9fd3ff",
+    devTextColor: "#e6e6e6",
+
+    _panelGeometryDesktop: null,
+    _panelGeometryMobile: null,
+    _groupOrder: ["devpanel", "grid", "button", "scene", "shading", "debug"],
+    _itemOrderByGroup: {
+      devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor"],
+      grid: ["colCount", "rowCount", "colSpacing", "rowSpacing"],
+      button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
+      scene: ["groundSize", "groundColor", "baseColor", "buttonColor", "cameraDistance", "cameraHeight", "cameraFov"],
+      shading: ["cellShadingEnabled", "toonBands"],
+      debug: ["debugWireframe"]
+    },
+    _collapsedGroups: ["devpanel"]
+  };
+
+  var GROUP_DEFS = [
+    { id: "devpanel", title: "Dev Panel" },
+    { id: "grid", title: "Grid" },
+    { id: "button", title: "Button" },
+    { id: "scene", title: "Scene" },
+    { id: "shading", title: "Shading" },
+    { id: "debug", title: "Debug" }
+  ];
+
+  var SLIDER_CONFIG = [
+    { key: "colCount", label: "Column Count", min: 1, max: 30, step: 1, unit: "", integer: true, regen: true },
+    { key: "rowCount", label: "Row Count", min: 1, max: 30, step: 1, unit: "", integer: true, regen: true },
+    { key: "colSpacing", label: "X Spacing (per button)", min: 0.5, max: 5, step: 0.05, unit: "(x)", regen: true },
+    { key: "rowSpacing", label: "Y Spacing (per row)", min: 0.5, max: 5, step: 0.05, unit: "(x)", regen: true },
+
+    { key: "baseRadius", label: "Base Radius", min: 0.1, max: 2, step: 0.01, unit: "(x)", regen: true },
+    { key: "baseHeight", label: "Base Height", min: 0.05, max: 1, step: 0.01, unit: "(x)", regen: true },
+    { key: "buttonRadius", label: "Button Radius", min: 0.05, max: 2, step: 0.01, unit: "(x)", regen: true },
+    { key: "buttonHeight", label: "Button Resting Height", min: 0.05, max: 1.5, step: 0.01, unit: "(x)", regen: true },
+    { key: "clickIntensity", label: "Click Press Depth", min: 0, max: 0.5, step: 0.005, unit: "(x)" },
+    { key: "heightGainPerClick", label: "Height Gain Per Click", min: 0, max: 0.2, step: 0.002, unit: "(x)" },
+    { key: "holdThresholdMs", label: "Hold Threshold (Reset)", min: 100, max: 2000, step: 50, unit: "(Ms)" },
+    { key: "releaseMs", label: "Release Speed", min: 0, max: 1000, step: 10, unit: "(Ms)" },
+
+    { key: "groundSize", label: "Ground Plane Size", min: 5, max: 100, step: 1, unit: "(x)", regen: true },
+    { key: "cameraDistance", label: "Camera Distance", min: 2, max: 40, step: 0.1, unit: "(x)", camera: true },
+    { key: "cameraHeight", label: "Camera Height", min: 0, max: 30, step: 0.1, unit: "(x)", camera: true },
+    { key: "cameraFov", label: "Camera FOV", min: 20, max: 100, step: 1, unit: "(Deg)", camera: true },
+
+    { key: "toonBands", label: "Toon Shading Bands", min: 2, max: 8, step: 1, unit: "", integer: true, material: true },
+
+    { key: "devTitleFontSize", label: "Dev Panel Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-title-font-size" },
+    { key: "devTabFontSize", label: "Desktop/Mobile Tab Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-tab-font-size" },
+    { key: "devGroupTitleFontSize", label: "Collapsible Group Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-group-title-font-size" },
+    { key: "devSettingTitleFontSize", label: "Settings Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-setting-title-font-size" },
+    { key: "devBodyFontSize", label: "Body Text Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-body-font-size" },
+    { key: "devPanelOpacity", label: "Dev Panel Opacity", min: 0.1, max: 1, step: 0.01, unit: "", cssVar: "--dev-panel-opacity" }
+  ];
+
+  var CHECKBOX_CONFIG = [
+    { key: "cellShadingEnabled", label: "Cell (Toon) Shading", material: true },
+    { key: "debugWireframe", label: "Wireframe", material: true }
+  ];
+
+  var COLOR_CONFIG = [
+    { key: "groundColor", label: "Ground Color", scene: true },
+    { key: "baseColor", label: "Base Color", material: true },
+    { key: "buttonColor", label: "Button Color", material: true },
+    { key: "devBgColor", label: "Dev Panel Background Color", cssVar: "--dev-bg-color" },
+    { key: "devTitleColor", label: "Dev Panel Title Text Color", cssVar: "--dev-title-color" },
+    { key: "devTextColor", label: "Dev Panel Non-Title Text Color", cssVar: "--dev-text-color" }
+  ];
+
+  var CONTROL_BY_KEY = {};
+  SLIDER_CONFIG.forEach(function (cfg) { cfg.type = "slider"; CONTROL_BY_KEY[cfg.key] = cfg; });
+  CHECKBOX_CONFIG.forEach(function (cfg) { cfg.type = "checkbox"; CONTROL_BY_KEY[cfg.key] = cfg; });
+  COLOR_CONFIG.forEach(function (cfg) { cfg.type = "color"; CONTROL_BY_KEY[cfg.key] = cfg; });
+
+  function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
+
+  var LOCAL_KEY = "buttsons3dSettings";
+  function loadSavedDefaults() {
+    try {
+      var raw = localStorage.getItem(LOCAL_KEY);
+      if (!raw) return deepClone(DEFAULT_SETTINGS);
+      var parsed = JSON.parse(raw);
+      return Object.assign(deepClone(DEFAULT_SETTINGS), parsed);
+    } catch (e) {
+      return deepClone(DEFAULT_SETTINGS);
+    }
+  }
+
+  var savedDefaults = loadSavedDefaults();
+  var settings = deepClone(savedDefaults);
+
+  var root = document.documentElement;
+  var devPanel = document.getElementById("devPanel");
+  var groupsHost = document.getElementById("devGroups");
+  var MOBILE_MEDIA_QUERY = matchMedia("(max-width: 767px)");
+  function isMobileActive() { return MOBILE_MEDIA_QUERY.matches; }
+
+  function applyCssVar(cfg, value) {
+    if (cfg.cssVar) root.style.setProperty(cfg.cssVar, value);
+  }
+
+  // ---- Three.js scene ----
+  var canvas = document.getElementById("sceneCanvas");
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.shadowMap.enabled = false; // no shadows, per spec
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x14151a);
+
+  var camera = new THREE.PerspectiveCamera(settings.cameraFov, window.innerWidth / window.innerHeight, 0.1, 500);
+
+  // Flat lighting only -- ambient always on; a directional light is added ONLY while
+  // cell shading is enabled (toon shading needs a directional light to produce visible
+  // bands at all -- pure ambient is uniform and would render toon material as flat too).
+  var ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+  scene.add(ambientLight);
+  var toonLight = new THREE.DirectionalLight(0xffffff, 0.9);
+  toonLight.position.set(3, 6, 4);
+  // not added to the scene until cell shading is turned on
+
+  var groundGeo = new THREE.PlaneGeometry(1, 1);
+  var groundMat = new THREE.MeshBasicMaterial({ color: settings.groundColor });
+  var ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  function buildGradientMap(bands) {
+    var size = Math.max(2, Math.round(bands));
+    var data = new Uint8Array(size);
+    for (var i = 0; i < size; i++) data[i] = Math.round((i / (size - 1)) * 255);
+    var tex = new THREE.DataTexture(data, size, 1, THREE.RedFormat);
+    tex.needsUpdate = true;
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    return tex;
+  }
+
+  function makeMaterial(colorHex) {
+    if (settings.cellShadingEnabled) {
+      return new THREE.MeshToonMaterial({
+        color: colorHex,
+        gradientMap: buildGradientMap(settings.toonBands),
+        wireframe: settings.debugWireframe
+      });
+    }
+    return new THREE.MeshBasicMaterial({ color: colorHex, wireframe: settings.debugWireframe });
+  }
+
+  var baseMat = makeMaterial(settings.baseColor);
+  var buttonMat = makeMaterial(settings.buttonColor);
+
+  var baseGeo = null, buttonGeo = null;
+  var cells = []; // { group, buttonMesh, restHeight, currentGain, pressedAt, tween }
+
+  function rebuildGeometry() {
+    if (baseGeo) baseGeo.dispose();
+    if (buttonGeo) buttonGeo.dispose();
+    baseGeo = new THREE.CylinderGeometry(settings.baseRadius, settings.baseRadius, settings.baseHeight, 32);
+    buttonGeo = new THREE.CylinderGeometry(settings.buttonRadius, settings.buttonRadius, settings.buttonHeight, 32);
+  }
+
+  function refreshMaterials() {
+    baseMat.dispose();
+    buttonMat.dispose();
+    baseMat = makeMaterial(settings.baseColor);
+    buttonMat = makeMaterial(settings.buttonColor);
+    cells.forEach(function (c) {
+      c.baseMesh.material = baseMat;
+      c.buttonMesh.material = buttonMat;
+    });
+    if (settings.cellShadingEnabled) {
+      if (!scene.getObjectById(toonLight.id)) scene.add(toonLight);
+    } else if (scene.getObjectById(toonLight.id)) {
+      scene.remove(toonLight);
+    }
+  }
+
+  function buttonRestY(cell) {
+    return settings.baseHeight + (settings.buttonHeight + cell.currentGain) / 2;
+  }
+
+  function regenerateGrid() {
+    rebuildGeometry();
+    cells.forEach(function (c) { c.group.parent.remove(c.group); });
+    cells = [];
+
+    var cols = settings.colCount, rows = settings.rowCount;
+    var spacingX = settings.colSpacing * (settings.baseRadius * 2.2);
+    var spacingZ = settings.rowSpacing * (settings.baseRadius * 2.2);
+    var totalW = (cols - 1) * spacingX;
+    var totalD = (rows - 1) * spacingZ;
+
+    ground.scale.set(settings.groundSize, settings.groundSize, 1);
+    groundMat.color.set(settings.groundColor);
+
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var group = new THREE.Group();
+        group.position.set(c * spacingX - totalW / 2, 0, r * spacingZ - totalD / 2);
+
+        var baseMesh = new THREE.Mesh(baseGeo, baseMat);
+        baseMesh.position.y = settings.baseHeight / 2;
+        group.add(baseMesh);
+
+        var buttonMesh = new THREE.Mesh(buttonGeo, buttonMat);
+        buttonMesh.userData.isButton = true;
+        group.add(buttonMesh);
+
+        var cell = { group: group, baseMesh: baseMesh, buttonMesh: buttonMesh, currentGain: 0, pressedAt: 0, pressed: false, tween: null };
+        buttonMesh.userData.cell = cell;
+        buttonMesh.position.y = buttonRestY(cell);
+        cells.push(cell);
+        scene.add(group);
+      }
+    }
+  }
+
+  function applyCameraSettings() {
+    camera.fov = settings.cameraFov;
+    camera.position.set(0, settings.cameraHeight, settings.cameraDistance);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  }
+
+  // ---- Interaction: press = compress down instantly; release = spring to a NEW
+  // resting height (higher on a quick click, lower after a deliberate hold, floored
+  // at 0) -- mirrors the 2D BUTTSONS project's pressCell()/releaseCell() exactly,
+  // just driving a Y position instead of a CSS transform. ----
+  function tweenTo(cell, targetY, durationMs) {
+    cell.tween = { fromY: cell.buttonMesh.position.y, toY: targetY, start: performance.now(), duration: Math.max(1, durationMs) };
+  }
+
+  function pressCell(cell) {
+    if (cell.pressed) return;
+    cell.pressed = true;
+    cell.pressedAt = performance.now();
+    tweenTo(cell, buttonRestY(cell) - settings.clickIntensity, 0);
+  }
+
+  function releaseCell(cell) {
+    if (!cell.pressed) return;
+    cell.pressed = false;
+    var heldMs = performance.now() - cell.pressedAt;
+    var wasHeld = heldMs >= settings.holdThresholdMs;
+    cell.currentGain = wasHeld
+      ? Math.max(0, cell.currentGain - settings.heightGainPerClick)
+      : cell.currentGain + settings.heightGainPerClick;
+    tweenTo(cell, buttonRestY(cell), settings.releaseMs);
+  }
+
+  var raycaster = new THREE.Raycaster();
+  var pointerNDC = new THREE.Vector2();
+  var activePointers = new Map();
+
+  function pickCell(clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointerNDC, camera);
+    var hits = raycaster.intersectObjects(cells.map(function (c) { return c.buttonMesh; }), false);
+    return hits.length ? hits[0].object.userData.cell : null;
+  }
+
+  canvas.addEventListener("pointerdown", function (e) {
+    var cell = pickCell(e.clientX, e.clientY);
+    if (!cell) return;
+    activePointers.set(e.pointerId, cell);
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    pressCell(cell);
+  });
+  function handlePointerEnd(e) {
+    var cell = activePointers.get(e.pointerId);
+    if (!cell) return;
+    activePointers.delete(e.pointerId);
+    releaseCell(cell);
+  }
+  canvas.addEventListener("pointerup", handlePointerEnd);
+  canvas.addEventListener("pointercancel", handlePointerEnd);
+
+  // ---- Render loop ----
+  function resize() {
+    var w = window.innerWidth, h = window.innerHeight;
+    // Guard against a 0-sized read (some environments report 0 for both on the very
+    // first script tick of a brand-new tab, before layout has run) -- skip rather than
+    // sizing the renderer to nothing; the requestAnimationFrame retry below and the
+    // normal window "resize" listener both get another chance once real values exist.
+    if (w <= 0 || h <= 0) return;
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    var now = performance.now();
+    cells.forEach(function (c) {
+      if (!c.tween) return;
+      if (c.tween.duration <= 1) {
+        c.buttonMesh.position.y = c.tween.toY;
+        c.tween = null;
+        return;
+      }
+      var t = Math.min(1, (now - c.tween.start) / c.tween.duration);
+      c.buttonMesh.position.y = c.tween.fromY + (c.tween.toY - c.tween.fromY) * easeOutCubic(t);
+      if (t >= 1) c.tween = null;
+    });
+    renderer.render(scene, camera);
+  }
+
+  // ---- applySetting / dev panel plumbing (mechanics ported from BUTTSONS) ----
+  function formatValue(cfg, value) {
+    if (cfg.integer) return Math.round(value) + (cfg.unit ? " " + cfg.unit : "");
+    return (Math.round(value * 1000) / 1000) + (cfg.unit ? " " + cfg.unit : "");
+  }
+
+  function applySetting(cfg, rawValue, opts) {
+    opts = opts || {};
+    var value = cfg.integer ? Math.round(rawValue) : rawValue;
+    settings[cfg.key] = value;
+
+    var slider = document.getElementById("slider-" + cfg.key);
+    if (slider) slider.value = value;
+    var valueEl = document.getElementById("value-" + cfg.key);
+    if (valueEl && !valueEl.querySelector("input")) valueEl.textContent = formatValue(cfg, value);
+
+    applyCssVar(cfg, value);
+    if (cfg.camera) applyCameraSettings();
+    if (cfg.material) refreshMaterials();
+    if (cfg.scene) { groundMat.color.set(settings.groundColor); }
+    if (cfg.regen && !opts.skipRegen) regenerateGrid();
+  }
+
+  function applyAllSettings() {
+    SLIDER_CONFIG.forEach(function (cfg) { applySetting(cfg, settings[cfg.key], { skipRegen: true }); });
+    CHECKBOX_CONFIG.forEach(function (cfg) {
+      var input = document.getElementById("check-" + cfg.key);
+      if (input) input.checked = settings[cfg.key];
+    });
+    COLOR_CONFIG.forEach(function (cfg) {
+      applyCssVar(cfg, settings[cfg.key]);
+      var input = document.getElementById("color-" + cfg.key);
+      if (input) input.value = settings[cfg.key];
+    });
+    applyCameraSettings();
+    refreshMaterials();
+    regenerateGrid();
+  }
+
+  function makeValueEditable(cfg, valueEl) {
+    valueEl.addEventListener("click", function () {
+      if (valueEl.querySelector("input")) return;
+      var current = settings[cfg.key];
+      valueEl.textContent = "";
+      var input = document.createElement("input");
+      input.type = "number";
+      input.step = cfg.step;
+      input.value = current;
+      valueEl.appendChild(input);
+      input.focus();
+      input.select();
+      function commit() {
+        var parsed = parseFloat(input.value);
+        if (!isNaN(parsed)) {
+          if (parsed < cfg.min) { cfg.min = parsed - Math.abs(parsed) * 0.2; document.getElementById("slider-" + cfg.key).min = cfg.min; }
+          if (parsed > cfg.max) { cfg.max = parsed + Math.abs(parsed) * 0.2; document.getElementById("slider-" + cfg.key).max = cfg.max; }
+          applySetting(cfg, parsed);
+        } else {
+          valueEl.textContent = formatValue(cfg, settings[cfg.key]);
+        }
+      }
+      input.addEventListener("blur", commit);
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") input.blur();
+        if (e.key === "Escape") { valueEl.textContent = formatValue(cfg, settings[cfg.key]); }
+      });
+    });
+  }
+
+  function renderControl(cfg) {
+    var row = document.createElement("div");
+    row.className = "dev-row";
+    row.dataset.key = cfg.key;
+    if (cfg.deviceTab) row.classList.add("dev-tab-" + cfg.deviceTab);
+
+    var grip = document.createElement("span");
+    grip.className = "drag-grip";
+    grip.textContent = "☰";
+    row.appendChild(grip);
+
+    if (cfg.type === "checkbox") {
+      var label = document.createElement("label");
+      label.className = "dev-checkbox-row";
+      var checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = "check-" + cfg.key;
+      checkbox.checked = settings[cfg.key];
+      checkbox.addEventListener("change", function () {
+        settings[cfg.key] = checkbox.checked;
+        if (cfg.material) refreshMaterials();
+      });
+      label.appendChild(checkbox);
+      label.appendChild(document.createTextNode(" " + cfg.label));
+      row.appendChild(label);
+      return row;
+    }
+
+    if (cfg.type === "color") {
+      var main = document.createElement("div");
+      main.className = "dev-row-main dev-color-row";
+      var colorLabel = document.createElement("span");
+      colorLabel.className = "dev-setting-label";
+      colorLabel.textContent = cfg.label;
+      var colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.id = "color-" + cfg.key;
+      colorInput.value = settings[cfg.key];
+      colorInput.addEventListener("input", function () {
+        settings[cfg.key] = colorInput.value;
+        applyCssVar(cfg, colorInput.value);
+        if (cfg.material) refreshMaterials();
+        if (cfg.scene) groundMat.color.set(settings.groundColor);
+      });
+      main.appendChild(colorLabel);
+      main.appendChild(colorInput);
+      row.appendChild(main);
+      return row;
+    }
+
+    var main2 = document.createElement("div");
+    main2.className = "dev-row-main";
+    var label2 = document.createElement("span");
+    label2.className = "dev-setting-label";
+    label2.textContent = cfg.label;
+    main2.appendChild(label2);
+
+    var controls = document.createElement("div");
+    controls.className = "dev-controls";
+    var slider = document.createElement("input");
+    slider.type = "range";
+    slider.id = "slider-" + cfg.key;
+    slider.min = cfg.min;
+    slider.max = cfg.max;
+    slider.step = cfg.step;
+    slider.value = settings[cfg.key];
+    controls.appendChild(slider);
+
+    var valueEl = document.createElement("span");
+    valueEl.className = "dev-value";
+    valueEl.id = "value-" + cfg.key;
+    valueEl.textContent = formatValue(cfg, settings[cfg.key]);
+    controls.appendChild(valueEl);
+
+    main2.appendChild(controls);
+    row.appendChild(main2);
+
+    slider.addEventListener("input", function () { applySetting(cfg, parseFloat(slider.value)); });
+    makeValueEditable(cfg, valueEl);
+    return row;
+  }
+
+  function buildPanelContent() {
+    groupsHost.innerHTML = "";
+    settings._groupOrder.forEach(function (groupId) {
+      var def = GROUP_DEFS.filter(function (g) { return g.id === groupId; })[0];
+      if (!def) return;
+      var groupEl = document.createElement("div");
+      groupEl.className = "dev-group";
+      groupEl.dataset.groupId = groupId;
+      if (settings._collapsedGroups.indexOf(groupId) !== -1) groupEl.classList.add("collapsed");
+
+      var header = document.createElement("div");
+      header.className = "dev-group-header";
+      var grip = document.createElement("span");
+      grip.className = "drag-grip";
+      grip.textContent = "☰";
+      var title = document.createElement("span");
+      title.className = "dev-group-title";
+      title.textContent = def.title;
+      var caret = document.createElement("span");
+      caret.className = "dev-group-caret";
+      caret.textContent = "▼";
+      header.appendChild(grip);
+      header.appendChild(title);
+      header.appendChild(caret);
+      header.addEventListener("click", function (e) {
+        if (e.target === grip) return;
+        groupEl.classList.toggle("collapsed");
+        var idx = settings._collapsedGroups.indexOf(groupId);
+        if (groupEl.classList.contains("collapsed")) {
+          if (idx === -1) settings._collapsedGroups.push(groupId);
+        } else if (idx !== -1) {
+          settings._collapsedGroups.splice(idx, 1);
+        }
+      });
+      groupEl.appendChild(header);
+
+      var body = document.createElement("div");
+      body.className = "dev-group-body";
+      (settings._itemOrderByGroup[groupId] || []).forEach(function (key) {
+        var cfg = CONTROL_BY_KEY[key];
+        if (cfg) body.appendChild(renderControl(cfg));
+      });
+      groupEl.appendChild(body);
+      groupsHost.appendChild(groupEl);
+    });
+  }
+
+  function initSortable() {
+    var dragEl = null, isGroup = false;
+    groupsHost.addEventListener("pointerdown", function (e) {
+      var grip = e.target.closest(".drag-grip");
+      if (!grip) return;
+      var groupItem = grip.closest(".dev-group");
+      var rowItem = grip.closest(".dev-row");
+      isGroup = !!grip.closest(".dev-group-header");
+      dragEl = isGroup ? groupItem : rowItem;
+      if (!dragEl) return;
+      dragEl.classList.add("dragging-item");
+      try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+
+      function onMove(ev) {
+        if (!dragEl) return;
+        var el = document.elementFromPoint(ev.clientX, ev.clientY);
+        var selector = isGroup ? ".dev-group" : ".dev-row";
+        var target = el && el.closest(selector);
+        if (!target || target === dragEl || target.parentElement !== dragEl.parentElement) return;
+        var rect = target.getBoundingClientRect();
+        var before = (ev.clientY - rect.top) < rect.height / 2;
+        target.parentElement.insertBefore(dragEl, before ? target : target.nextSibling);
+      }
+      function onUp() {
+        grip.removeEventListener("pointermove", onMove);
+        grip.removeEventListener("pointerup", onUp);
+        grip.removeEventListener("pointercancel", onUp);
+        if (!dragEl) return;
+        dragEl.classList.remove("dragging-item");
+        if (isGroup) {
+          settings._groupOrder = Array.from(groupsHost.children).map(function (el) { return el.dataset.groupId; });
+        } else {
+          var body = dragEl.parentElement;
+          var groupId = body.closest(".dev-group").dataset.groupId;
+          settings._itemOrderByGroup[groupId] = Array.from(body.children).map(function (el) { return el.dataset.key; });
+        }
+        dragEl = null;
+      }
+      grip.addEventListener("pointermove", onMove);
+      grip.addEventListener("pointerup", onUp);
+      grip.addEventListener("pointercancel", onUp);
+    });
+  }
+
+  function currentGeometryKey() { return isMobileActive() ? "_panelGeometryMobile" : "_panelGeometryDesktop"; }
+
+  function clampPanelSize(geo) {
+    var minW = 260, minH = 160;
+    var maxW = Math.max(minW, window.innerWidth);
+    var maxH = Math.max(minH, window.innerHeight);
+    geo.width = Math.min(Math.max(geo.width, minW), maxW);
+    geo.height = Math.min(Math.max(geo.height, minH), maxH);
+    geo.left = Math.min(Math.max(geo.left, 0), Math.max(0, window.innerWidth - geo.width));
+    geo.top = Math.min(Math.max(geo.top, 0), Math.max(0, window.innerHeight - geo.height));
+    return geo;
+  }
+
+  function applyPanelGeometry() {
+    var geo = settings[currentGeometryKey()];
+    if (!geo) {
+      geo = { top: 12, left: Math.max(12, window.innerWidth - 320), width: 300, height: 560 };
+    }
+    geo = clampPanelSize(geo);
+    devPanel.style.top = geo.top + "px";
+    devPanel.style.left = geo.left + "px";
+    devPanel.style.width = geo.width + "px";
+    devPanel.style.height = geo.height + "px";
+  }
+
+  function savePanelGeometry() {
+    var rect = devPanel.getBoundingClientRect();
+    settings[currentGeometryKey()] = { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+  }
+
+  function initPanelDragResize() {
+    var titlebar = devPanel.querySelector(".dev-titlebar");
+    var collapseBtn = document.getElementById("devCollapseBtn");
+
+    titlebar.addEventListener("pointerdown", function (e) {
+      if (e.target === collapseBtn) return;
+      var startX = e.clientX, startY = e.clientY;
+      var rect = devPanel.getBoundingClientRect();
+      var startLeft = rect.left, startTop = rect.top;
+      try { titlebar.setPointerCapture(e.pointerId); } catch (err) {}
+      function onMove(ev) {
+        var dx = ev.clientX - startX, dy = ev.clientY - startY;
+        var newLeft = Math.max(0, Math.min(window.innerWidth - devPanel.offsetWidth, startLeft + dx));
+        var newTop = Math.max(0, Math.min(window.innerHeight - devPanel.offsetHeight, startTop + dy));
+        devPanel.style.left = newLeft + "px";
+        devPanel.style.top = newTop + "px";
+      }
+      function onUp() {
+        titlebar.removeEventListener("pointermove", onMove);
+        titlebar.removeEventListener("pointerup", onUp);
+        titlebar.removeEventListener("pointercancel", onUp);
+        savePanelGeometry();
+      }
+      titlebar.addEventListener("pointermove", onMove);
+      titlebar.addEventListener("pointerup", onUp);
+      titlebar.addEventListener("pointercancel", onUp);
+    });
+
+    var edges = Array.from(devPanel.querySelectorAll(".dev-resize-edge, .dev-resize-corner"));
+    edges.forEach(function (handle) {
+      handle.addEventListener("pointerdown", function (e) {
+        e.stopPropagation();
+        var startX = e.clientX, startY = e.clientY;
+        var rect = devPanel.getBoundingClientRect();
+        var startLeft = rect.left, startTop = rect.top, startW = rect.width, startH = rect.height;
+        var cls = handle.className;
+        try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+        function onMove(ev) {
+          var dx = ev.clientX - startX, dy = ev.clientY - startY;
+          var newLeft = startLeft, newTop = startTop, newW = startW, newH = startH;
+          if (/\bn\b/.test(cls) || /nw|ne/.test(cls)) { newTop = startTop + dy; newH = startH - dy; }
+          if (/\bs\b/.test(cls) || /sw|se/.test(cls)) { newH = startH + dy; }
+          if (/\bw\b/.test(cls) || /nw|sw/.test(cls)) { newLeft = startLeft + dx; newW = startW - dx; }
+          if (/\be\b/.test(cls) || /ne|se/.test(cls)) { newW = startW + dx; }
+          newW = Math.max(260, newW);
+          newH = Math.max(160, newH);
+          devPanel.style.left = newLeft + "px";
+          devPanel.style.top = newTop + "px";
+          devPanel.style.width = newW + "px";
+          devPanel.style.height = newH + "px";
+        }
+        function onUp() {
+          handle.removeEventListener("pointermove", onMove);
+          handle.removeEventListener("pointerup", onUp);
+          handle.removeEventListener("pointercancel", onUp);
+          savePanelGeometry();
+        }
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+        handle.addEventListener("pointercancel", onUp);
+      });
+    });
+
+    collapseBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      devPanel.classList.toggle("collapsed");
+      collapseBtn.innerHTML = devPanel.classList.contains("collapsed") ? "&#9660;" : "&#9650;";
+    });
+
+    Array.prototype.forEach.call(devPanel.querySelectorAll(".dev-tab-btn"), function (btn) {
+      btn.addEventListener("click", function () {
+        devPanel.classList.remove("tab-desktop", "tab-mobile");
+        devPanel.classList.add("tab-" + btn.dataset.tab);
+      });
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key.toLowerCase() !== "d") return;
+      var t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (!document.body.classList.contains("dev-enabled")) return;
+      document.body.classList.toggle("dev-hidden");
+    });
+  }
+
+  function flashButton(btn, text) {
+    var original = btn.textContent;
+    btn.textContent = text;
+    setTimeout(function () { btn.textContent = original; }, 900);
+  }
+
+  document.getElementById("btnCopy").addEventListener("click", function () {
+    var btn = this;
+    var json = JSON.stringify(settings, null, 2);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(json).then(function () { flashButton(btn, "Copied!"); }, function () { fallbackCopy(json, btn); });
+    } else {
+      fallbackCopy(json, btn);
+    }
+  });
+  function fallbackCopy(text, btn) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand("copy"); flashButton(btn, "Copied!"); } catch (e) { flashButton(btn, "Copy failed"); }
+    document.body.removeChild(ta);
+  }
+
+  document.getElementById("btnSave").addEventListener("click", function () {
+    var btn = this;
+    savePanelGeometry();
+    try {
+      localStorage.setItem(LOCAL_KEY, JSON.stringify(settings));
+      savedDefaults = deepClone(settings);
+      flashButton(btn, "Saved (local)!");
+    } catch (e) {
+      flashButton(btn, "Save failed");
+    }
+  });
+
+  document.getElementById("btnReset").addEventListener("click", function () {
+    settings = deepClone(savedDefaults);
+    buildPanelContent();
+    applyAllSettings();
+    applyPanelGeometry();
+  });
+
+  MOBILE_MEDIA_QUERY.addEventListener("change", function () {
+    applyPanelGeometry();
+  });
+  window.addEventListener("resize", function () { applyPanelGeometry(); resize(); });
+
+  // ---- Init ----
+  devPanel.classList.add(isMobileActive() ? "tab-mobile" : "tab-desktop");
+  resize();
+  requestAnimationFrame(resize); // retry once more in case the call above was skipped (0x0)
+  buildPanelContent();
+  initSortable();
+  initPanelDragResize();
+  applyAllSettings();
+  applyPanelGeometry();
+  animate();
+})();
+</script>
+</body>
+</html>
