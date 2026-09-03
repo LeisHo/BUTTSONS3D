@@ -15,6 +15,15 @@ SETTINGS_LOG_PATH = os.path.join(REPO_ROOT, "data", "processed", "dev-panel-sett
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # A local dev tool should never let the browser silently reuse a stale copy of
+        # index.html (or anything else) across a plain reload -- SimpleHTTPRequestHandler
+        # sends no cache-control headers by default, so a normal (non-hard) refresh can
+        # serve an old cached page indefinitely, which cost real debugging time twice this
+        # session (looked exactly like a real app bug both times).
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        http.server.SimpleHTTPRequestHandler.end_headers(self)
+
     def do_POST(self):
         if self.path != "/api/save-settings":
             self.send_response(404)
