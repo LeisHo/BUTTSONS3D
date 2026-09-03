@@ -268,12 +268,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
   // ---- Settings ----
   var DEFAULT_SETTINGS = {
-    colCount: 8,
-    rowCount: 5,
-    colSpacing: 1.4,
-    rowSpacing: 1.4,
-    rowXOffset: 0,
-    cumulativeRowOffset: false,
+    colCount: 26,
+    rowCount: 15,
+    colSpacing: 0.7,
+    rowSpacing: 0.75,
+    rowXOffset: -2,
+    cumulativeRowOffset: true,
 
     // baseRadius/baseHeight/buttonRadius/buttonHeight are SCALE FACTORS (1.0 = the real
     // model's own authored size) now that the button is real geometry (data/BUTTON
@@ -282,31 +282,31 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     baseRadius: 1,
     baseHeight: 1,
     buttonRadius: 1,
-    buttonHeight: 1,
-    clickIntensity: 0.3,
-    heightGainPerClick: 0.12,
-    holdThresholdMs: 500,
-    releaseMs: 180,
+    buttonHeight: 0.41,
+    clickIntensity: 0.56,
+    heightGainPerClick: 0.5,
+    holdThresholdMs: 250,
+    releaseMs: 50,
 
     groundSize: 160,
     groundColor: "#22242c",
-    baseColor: "#3a3f4c",
+    baseColor: "#ff0000",
     buttonColor: "#d9363e",
 
-    ambientIntensity: 0.5,
-    directionalIntensity: 1.2,
-    lightAngleX: -40,
-    lightAngleY: 30,
-    lightAngleZ: 0,
+    ambientIntensity: 0,
+    directionalIntensity: 1.7,
+    lightAngleX: -80,
+    lightAngleY: -35,
+    lightAngleZ: -77,
 
-    cameraX: 0,
-    cameraHeight: 28,
-    cameraDistance: 36,
-    cameraFov: 45,
+    cameraX: 37.3,
+    cameraHeight: 40.8,
+    cameraDistance: 19.6,
+    cameraFov: 20,
 
-    cellShadingEnabled: false,
-    toonBands: 4,
-    toonShadowFloor: 25,
+    cellShadingEnabled: true,
+    toonBands: 8,
+    toonShadowFloor: 0,
     toonHighlightCeiling: 100,
 
     debugWireframe: false,
@@ -321,7 +321,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     devTitleColor: "#9fd3ff",
     devTextColor: "#e6e6e6",
 
-    _panelGeometryDesktop: null,
+    _panelGeometryDesktop: { top: 12, left: 1600, width: 300, height: 560 },
     _panelGeometryMobile: null,
     _groupOrder: ["devpanel", "grid", "button", "lighting", "camera", "scene", "shading", "debug"],
     _itemOrderByGroup: {
@@ -334,7 +334,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling"],
       debug: ["debugWireframe"]
     },
-    _collapsedGroups: ["devpanel"]
+    _collapsedGroups: ["devpanel", "grid", "button", "lighting"]
   };
 
   var GROUP_DEFS = [
