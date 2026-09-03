@@ -431,7 +431,28 @@ import * as THREE from "three";
       var raw = localStorage.getItem(LOCAL_KEY);
       if (!raw) return deepClone(DEFAULT_SETTINGS);
       var parsed = JSON.parse(raw);
-      return Object.assign(deepClone(DEFAULT_SETTINGS), parsed);
+      var merged = Object.assign(deepClone(DEFAULT_SETTINGS), parsed);
+      // Backfill only -- a saved dump from before a slider/group existed silently
+      // overwrites _groupOrder/_itemOrderByGroup wholesale via the shallow Object.assign
+      // above (they're nested lists, not scalar values), hiding any newly-added group or
+      // setting entirely even though its value/definition is present. Re-add anything
+      // DEFAULT_SETTINGS has that the saved copy doesn't, preserving the user's own saved
+      // order for everything that already existed.
+      DEFAULT_SETTINGS._groupOrder.forEach(function (groupId) {
+        if (merged._groupOrder.indexOf(groupId) === -1) merged._groupOrder.push(groupId);
+      });
+      Object.keys(DEFAULT_SETTINGS._itemOrderByGroup).forEach(function (groupId) {
+        if (!merged._itemOrderByGroup[groupId]) {
+          merged._itemOrderByGroup[groupId] = DEFAULT_SETTINGS._itemOrderByGroup[groupId].slice();
+          return;
+        }
+        DEFAULT_SETTINGS._itemOrderByGroup[groupId].forEach(function (key) {
+          if (merged._itemOrderByGroup[groupId].indexOf(key) === -1) {
+            merged._itemOrderByGroup[groupId].push(key);
+          }
+        });
+      });
+      return merged;
     } catch (e) {
       return deepClone(DEFAULT_SETTINGS);
     }
