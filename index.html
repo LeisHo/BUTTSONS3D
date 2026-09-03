@@ -239,12 +239,14 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
   }
 }
 </script>
 <script type="module">
 import * as THREE from "three";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
 
 (function () {
   "use strict";
@@ -269,7 +271,7 @@ import * as THREE from "three";
   // read back as Euler degrees so the rotation sliders start at a look that matches the
   // old lookAt-based default, instead of a guessed literal.
   var _defaultCam = new THREE.PerspectiveCamera();
-  _defaultCam.position.set(0, 7, 9);
+  _defaultCam.position.set(0, 28, 36);
   _defaultCam.lookAt(0, 0, 0);
   var _defaultCamRotDeg = {
     x: THREE.MathUtils.radToDeg(_defaultCam.rotation.x),
@@ -285,17 +287,21 @@ import * as THREE from "three";
     rowXOffset: 0,
     cumulativeRowOffset: false,
 
-    baseRadius: 0.5,
-    baseHeight: 0.25,
-    buttonRadius: 0.42,
-    buttonHeight: 0.3,
-    extensionRadius: 0.3,
-    clickIntensity: 0.12,
-    heightGainPerClick: 0.03,
+    // baseRadius/baseHeight/buttonRadius/buttonHeight are SCALE FACTORS (1.0 = the real
+    // model's own authored size) now that the button is real geometry (data/BUTTON
+    // MODEL.fbx), not a resizable procedural cylinder -- see NATURAL_BASE_RADIUS/
+    // NATURAL_BASE_HEIGHT further down.
+    baseRadius: 1,
+    baseHeight: 1,
+    buttonRadius: 1,
+    buttonHeight: 1,
+    extensionRadius: 0.9,
+    clickIntensity: 0.3,
+    heightGainPerClick: 0.12,
     holdThresholdMs: 500,
     releaseMs: 180,
 
-    groundSize: 40,
+    groundSize: 160,
     groundColor: "#22242c",
     baseColor: "#3a3f4c",
     buttonColor: "#d9363e",
@@ -307,8 +313,8 @@ import * as THREE from "three";
     lightAngleZ: 0,
 
     cameraX: 0,
-    cameraHeight: 7,
-    cameraDistance: 9,
+    cameraHeight: 28,
+    cameraDistance: 36,
     cameraFov: 45,
     cameraRotX: Math.round(_defaultCamRotDeg.x * 100) / 100,
     cameraRotY: Math.round(_defaultCamRotDeg.y * 100) / 100,
@@ -370,12 +376,12 @@ import * as THREE from "three";
     { key: "buttonRadius", label: "Button Radius", min: 0.05, max: 2, step: 0.01, unit: "(x)", regen: true },
     { key: "buttonHeight", label: "Button Resting Height", min: 0.05, max: 1.5, step: 0.01, unit: "(x)", regen: true },
     { key: "extensionRadius", label: "Extension (Gap-Fill) Radius", min: 0.02, max: 2, step: 0.01, unit: "(x)", regen: true },
-    { key: "clickIntensity", label: "Click Press Depth", min: 0, max: 0.5, step: 0.005, unit: "(x)" },
-    { key: "heightGainPerClick", label: "Height Gain Per Click", min: 0, max: 0.2, step: 0.002, unit: "(x)" },
+    { key: "clickIntensity", label: "Click Press Depth", min: 0, max: 1, step: 0.005, unit: "(x)" },
+    { key: "heightGainPerClick", label: "Height Gain Per Click", min: 0, max: 0.5, step: 0.002, unit: "(x)" },
     { key: "holdThresholdMs", label: "Hold Threshold (Reset)", min: 100, max: 2000, step: 50, unit: "(Ms)" },
     { key: "releaseMs", label: "Release Speed", min: 0, max: 1000, step: 10, unit: "(Ms)" },
 
-    { key: "groundSize", label: "Ground Plane Size", min: 5, max: 100, step: 1, unit: "(x)", regen: true },
+    { key: "groundSize", label: "Ground Plane Size", min: 5, max: 400, step: 1, unit: "(x)", regen: true },
 
     { key: "ambientIntensity", label: "Ambient Light Intensity", min: 0, max: 2, step: 0.01, unit: "(x)", light: true },
     { key: "directionalIntensity", label: "Directional Light Intensity", min: 0, max: 3, step: 0.01, unit: "(x)", light: true },
@@ -383,9 +389,9 @@ import * as THREE from "three";
     { key: "lightAngleY", label: "Light Angle Y", min: -180, max: 180, step: 1, unit: "(Deg)", light: true },
     { key: "lightAngleZ", label: "Light Angle Z", min: -180, max: 180, step: 1, unit: "(Deg)", light: true },
 
-    { key: "cameraX", label: "Camera X Position", min: -30, max: 30, step: 0.1, unit: "(x)", camera: true },
-    { key: "cameraHeight", label: "Camera Y Position", min: -30, max: 30, step: 0.1, unit: "(x)", camera: true },
-    { key: "cameraDistance", label: "Camera Z Position", min: -40, max: 40, step: 0.1, unit: "(x)", camera: true },
+    { key: "cameraX", label: "Camera X Position", min: -100, max: 100, step: 0.1, unit: "(x)", camera: true },
+    { key: "cameraHeight", label: "Camera Y Position", min: -100, max: 100, step: 0.1, unit: "(x)", camera: true },
+    { key: "cameraDistance", label: "Camera Z Position", min: -150, max: 150, step: 0.1, unit: "(x)", camera: true },
     { key: "cameraFov", label: "Camera FOV", min: 20, max: 100, step: 1, unit: "(Deg)", camera: true },
     { key: "cameraRotX", label: "Camera Rotation X", min: -180, max: 180, step: 0.5, unit: "(Deg)", camera: true },
     { key: "cameraRotY", label: "Camera Rotation Y", min: -180, max: 180, step: 0.5, unit: "(Deg)", camera: true },
@@ -546,18 +552,51 @@ import * as THREE from "three";
   var baseMat = makeMaterial(settings.baseColor);
   var buttonMat = makeMaterial(settings.buttonColor);
 
-  var baseGeo = null, buttonGeo = null, extGeo = null;
-  var cells = []; // { group, baseMesh, buttonMesh, extMesh, currentGain, pressedAt, tween }
+  // The real Rhino-modeled button (data/BUTTON MODEL.fbx) replaces the placeholder
+  // cylinders: 4 named parts -- BUTTON_BASE, BUTTON_EXTERIOR (the always-visible outer
+  // shell), and a BUTTON_INTERIOR_-_UNPRESSED/_PRESSED pair (the convex/concave swap
+  // discussed earlier, toggled by visibility on press same as the 2D project's own
+  // dome-up/dome-pressed swap). Authored Z-up (Rhino's convention) -- rotateX(-90deg)
+  // once, baked into the geometry, converts each part to this scene's Y-up frame so
+  // nothing downstream needs to think about the source coordinate system again. Radius
+  // ~2.03 and height 1 for the base (see NATURAL_BASE_* below) are the model's own real
+  // proportions -- the size sliders scale relative to that authored size (1.0 = as
+  // modeled), not literal world units, since this is a fixed shape, not a resizable
+  // primitive.
+  var NATURAL_BASE_RADIUS = 2.03125;
+  var NATURAL_BASE_HEIGHT = 1;
+  var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null };
+  var modelReady = false;
 
-  function rebuildGeometry() {
-    if (baseGeo) baseGeo.dispose();
-    if (buttonGeo) buttonGeo.dispose();
-    if (extGeo) extGeo.dispose();
-    baseGeo = new THREE.CylinderGeometry(settings.baseRadius, settings.baseRadius, settings.baseHeight, 32);
-    buttonGeo = new THREE.CylinderGeometry(settings.buttonRadius, settings.buttonRadius, settings.buttonHeight, 32);
-    // Unit height (1) -- stretched per-cell every frame via scale.y so it always exactly
-    // bridges the base's top to the button's current bottom, whatever that gap is.
-    extGeo = new THREE.CylinderGeometry(settings.extensionRadius, settings.extensionRadius, 1, 24);
+  function extractGeo(root, groupName) {
+    var groupObj = root.getObjectByName(groupName);
+    var mesh = null;
+    if (groupObj) groupObj.traverse(function (c) { if (c.isMesh && !mesh) mesh = c; });
+    if (!mesh) throw new Error("BUTTON MODEL.fbx: part not found -- " + groupName);
+    var geo = mesh.geometry.clone();
+    geo.rotateX(-Math.PI / 2);
+    geo.computeBoundingBox();
+    return geo;
+  }
+
+  function loadButtonModel() {
+    return new Promise(function (resolve) {
+      new FBXLoader().load("data/BUTTON MODEL.fbx", function (obj) {
+        try {
+          modelGeo.base = extractGeo(obj, "BUTTON_BASE");
+          modelGeo.exterior = extractGeo(obj, "BUTTON_EXTERIOR");
+          modelGeo.unpressed = extractGeo(obj, "BUTTON_INTERIOR_-_UNPRESSED");
+          modelGeo.pressed = extractGeo(obj, "BUTTON_INTERIOR_-_PRESSED");
+          modelReady = true;
+        } catch (e) {
+          console.error("Failed to process BUTTON MODEL.fbx:", e);
+        }
+        resolve();
+      }, undefined, function (err) {
+        console.error("Failed to load BUTTON MODEL.fbx:", err);
+        resolve();
+      });
+    });
   }
 
   function refreshMaterials() {
@@ -567,23 +606,32 @@ import * as THREE from "three";
     buttonMat = makeMaterial(settings.buttonColor);
     cells.forEach(function (c) {
       c.baseMesh.material = baseMat;
-      c.buttonMesh.material = buttonMat;
+      c.exteriorMesh.material = buttonMat;
+      c.unpressedMesh.material = buttonMat;
+      c.pressedMesh.material = buttonMat;
       c.extMesh.material = buttonMat;
     });
   }
 
-  function buttonRestY(cell) {
-    return settings.baseHeight + (settings.buttonHeight + cell.currentGain) / 2;
+  var cells = []; // { group, baseMesh, capGroup, exteriorMesh, unpressedMesh, pressedMesh, extMesh, currentGain, pressedAt, pressed, tween }
+
+  // capGroup's resting Y (flush on the base's own scaled top) plus however much height
+  // gain has accumulated -- the base and cap are two independently-scaled real objects
+  // now, not one procedural cylinder, so this reads the base's actual scaled height
+  // rather than assuming it.
+  function capRestY(cell) {
+    return settings.baseHeight * NATURAL_BASE_HEIGHT + cell.currentGain;
   }
 
   // Keeps the extension cylinder stretched to exactly fill the gap between the base's
-  // top and the button's current bottom face -- covers both the height-gain case (button
-  // rests higher, gap opens up) and the mid-press case (button dips toward/into the base,
-  // gap shrinks toward 0) since it reads the button's LIVE position, not just its rest Y.
+  // top and the cap's current bottom face -- covers both the height-gain case (cap rests
+  // higher, gap opens up) and the mid-press case (cap dips toward/into the base, gap
+  // shrinks toward 0). The cap's own local origin is already at its authored bottom (no
+  // half-height subtraction needed, unlike the old centered placeholder cylinder).
   function updateExtension(cell) {
-    var buttonBottom = cell.buttonMesh.position.y - settings.buttonHeight / 2;
-    var baseTop = settings.baseHeight;
-    var gap = Math.max(0.0005, buttonBottom - baseTop);
+    var capBottom = cell.capGroup.position.y;
+    var baseTop = settings.baseHeight * NATURAL_BASE_HEIGHT;
+    var gap = Math.max(0.0005, capBottom - baseTop);
     cell.extMesh.scale.y = gap;
     cell.extMesh.position.y = baseTop + gap / 2;
   }
@@ -597,38 +645,55 @@ import * as THREE from "three";
   }
 
   function regenerateGrid() {
-    rebuildGeometry();
+    if (!modelReady) return; // first call is deferred until the model finishes loading (see Init)
     cells.forEach(function (c) { c.group.parent.remove(c.group); });
     cells = [];
 
     var cols = settings.colCount, rows = settings.rowCount;
-    var spacingX = settings.colSpacing * (settings.baseRadius * 2.2);
-    var spacingZ = settings.rowSpacing * (settings.baseRadius * 2.2);
+    var spacingX = settings.colSpacing * (NATURAL_BASE_RADIUS * settings.baseRadius * 2.2);
+    var spacingZ = settings.rowSpacing * (NATURAL_BASE_RADIUS * settings.baseRadius * 2.2);
     var totalW = (cols - 1) * spacingX;
     var totalD = (rows - 1) * spacingZ;
 
     ground.scale.set(settings.groundSize, settings.groundSize, 1);
     groundMat.color.set(settings.groundColor);
 
+    var extGeo = new THREE.CylinderGeometry(settings.extensionRadius, settings.extensionRadius, 1, 24);
+
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
         var group = new THREE.Group();
         group.position.set(c * spacingX - totalW / 2 + rowXOffset(r), 0, r * spacingZ - totalD / 2);
 
-        var baseMesh = new THREE.Mesh(baseGeo, baseMat);
-        baseMesh.position.y = settings.baseHeight / 2;
+        var baseMesh = new THREE.Mesh(modelGeo.base, baseMat);
+        baseMesh.scale.set(settings.baseRadius, settings.baseHeight, settings.baseRadius);
         group.add(baseMesh);
 
         var extMesh = new THREE.Mesh(extGeo, buttonMat);
         group.add(extMesh);
 
-        var buttonMesh = new THREE.Mesh(buttonGeo, buttonMat);
-        buttonMesh.userData.isButton = true;
-        group.add(buttonMesh);
+        var capGroup = new THREE.Group();
+        capGroup.scale.set(settings.buttonRadius, settings.buttonHeight, settings.buttonRadius);
+        group.add(capGroup);
 
-        var cell = { group: group, baseMesh: baseMesh, buttonMesh: buttonMesh, extMesh: extMesh, currentGain: 0, pressedAt: 0, pressed: false, tween: null };
-        buttonMesh.userData.cell = cell;
-        buttonMesh.position.y = buttonRestY(cell);
+        var exteriorMesh = new THREE.Mesh(modelGeo.exterior, buttonMat);
+        exteriorMesh.userData.isButton = true;
+        capGroup.add(exteriorMesh);
+
+        var unpressedMesh = new THREE.Mesh(modelGeo.unpressed, buttonMat);
+        capGroup.add(unpressedMesh);
+
+        var pressedMesh = new THREE.Mesh(modelGeo.pressed, buttonMat);
+        pressedMesh.visible = false;
+        capGroup.add(pressedMesh);
+
+        var cell = {
+          group: group, baseMesh: baseMesh, capGroup: capGroup,
+          exteriorMesh: exteriorMesh, unpressedMesh: unpressedMesh, pressedMesh: pressedMesh, extMesh: extMesh,
+          currentGain: 0, pressedAt: 0, pressed: false, tween: null
+        };
+        exteriorMesh.userData.cell = cell;
+        capGroup.position.y = capRestY(cell);
         updateExtension(cell);
         cells.push(cell);
         scene.add(group);
@@ -647,19 +712,22 @@ import * as THREE from "three";
     camera.updateProjectionMatrix();
   }
 
-  // ---- Interaction: press = compress down instantly; release = spring to a NEW
-  // resting height (higher on a quick click, lower after a deliberate hold, floored
-  // at 0) -- mirrors the 2D BUTTSONS project's pressCell()/releaseCell() exactly,
-  // just driving a Y position instead of a CSS transform. ----
+  // ---- Interaction: press = compress down instantly, swap to the modeled PRESSED
+  // interior shape; release = spring to a NEW resting height (higher on a quick click,
+  // lower after a deliberate hold, floored at 0) and swap back to UNPRESSED -- mirrors
+  // the 2D BUTTSONS project's pressCell()/releaseCell() (and its dome-up/dome-pressed
+  // swap) exactly, just driving a real 3D Y position instead of a CSS transform. ----
   function tweenTo(cell, targetY, durationMs) {
-    cell.tween = { fromY: cell.buttonMesh.position.y, toY: targetY, start: performance.now(), duration: Math.max(1, durationMs) };
+    cell.tween = { fromY: cell.capGroup.position.y, toY: targetY, start: performance.now(), duration: Math.max(1, durationMs) };
   }
 
   function pressCell(cell) {
     if (cell.pressed) return;
     cell.pressed = true;
     cell.pressedAt = performance.now();
-    tweenTo(cell, buttonRestY(cell) - settings.clickIntensity, 0);
+    cell.unpressedMesh.visible = false;
+    cell.pressedMesh.visible = true;
+    tweenTo(cell, capRestY(cell) - settings.clickIntensity, 0);
   }
 
   function releaseCell(cell) {
@@ -670,7 +738,9 @@ import * as THREE from "three";
     cell.currentGain = wasHeld
       ? Math.max(0, cell.currentGain - settings.heightGainPerClick)
       : cell.currentGain + settings.heightGainPerClick;
-    tweenTo(cell, buttonRestY(cell), settings.releaseMs);
+    cell.unpressedMesh.visible = true;
+    cell.pressedMesh.visible = false;
+    tweenTo(cell, capRestY(cell), settings.releaseMs);
   }
 
   var raycaster = new THREE.Raycaster();
@@ -682,7 +752,7 @@ import * as THREE from "three";
     pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointerNDC, camera);
-    var hits = raycaster.intersectObjects(cells.map(function (c) { return c.buttonMesh; }), false);
+    var hits = raycaster.intersectObjects(cells.map(function (c) { return c.exteriorMesh; }), false);
     return hits.length ? hits[0].object.userData.cell : null;
   }
 
@@ -725,11 +795,11 @@ import * as THREE from "three";
     cells.forEach(function (c) {
       if (c.tween) {
         if (c.tween.duration <= 1) {
-          c.buttonMesh.position.y = c.tween.toY;
+          c.capGroup.position.y = c.tween.toY;
           c.tween = null;
         } else {
           var t = Math.min(1, (now - c.tween.start) / c.tween.duration);
-          c.buttonMesh.position.y = c.tween.fromY + (c.tween.toY - c.tween.fromY) * easeOutCubic(t);
+          c.capGroup.position.y = c.tween.fromY + (c.tween.toY - c.tween.fromY) * easeOutCubic(t);
           if (t >= 1) c.tween = null;
         }
       }
@@ -1156,9 +1226,12 @@ import * as THREE from "three";
   buildPanelContent();
   initSortable();
   initPanelDragResize();
-  applyAllSettings();
   applyPanelGeometry();
   animate();
+  // Grid/material/camera/light setup waits on the button model finishing its async load
+  // (regenerateGrid() no-ops via its own modelReady guard until then anyway, but calling
+  // applyAllSettings() only after resolve avoids doing that work twice).
+  loadButtonModel().then(applyAllSettings);
 })();
 </script>
 </body>
