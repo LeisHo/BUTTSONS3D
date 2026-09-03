@@ -283,7 +283,6 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     baseHeight: 1,
     buttonRadius: 1,
     buttonHeight: 1,
-    extensionRadius: 0.9,
     clickIntensity: 0.3,
     heightGainPerClick: 0.12,
     holdThresholdMs: 500,
@@ -328,7 +327,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     _itemOrderByGroup: {
       devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor"],
       grid: ["colCount", "rowCount", "colSpacing", "rowSpacing", "rowXOffset", "cumulativeRowOffset"],
-      button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "extensionRadius", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
+      button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
@@ -360,7 +359,6 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     { key: "baseHeight", label: "Base Height", min: 0.05, max: 1, step: 0.01, unit: "(x)", regen: true },
     { key: "buttonRadius", label: "Button Radius", min: 0.05, max: 2, step: 0.01, unit: "(x)", regen: true },
     { key: "buttonHeight", label: "Button Resting Height", min: 0.05, max: 1.5, step: 0.01, unit: "(x)", regen: true },
-    { key: "extensionRadius", label: "Extension (Gap-Fill) Radius", min: 0.02, max: 2, step: 0.01, unit: "(x)", regen: true },
     { key: "clickIntensity", label: "Click Press Depth", min: 0, max: 1, step: 0.005, unit: "(x)" },
     { key: "heightGainPerClick", label: "Height Gain Per Click", min: 0, max: 0.5, step: 0.002, unit: "(x)" },
     { key: "holdThresholdMs", label: "Hold Threshold (Reset)", min: 100, max: 2000, step: 50, unit: "(Ms)" },
@@ -568,6 +566,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   // primitive.
   var NATURAL_BASE_RADIUS = 2.03125;
   var NATURAL_BASE_HEIGHT = 1;
+  var NATURAL_EXTERIOR_RADIUS = 1.5; // BUTTON_EXTERIOR's own authored radius
   var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null };
   var modelReady = false;
 
@@ -661,7 +660,12 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     ground.scale.set(settings.groundSize, settings.groundSize, 1);
     groundMat.color.set(settings.groundColor);
 
-    var extGeo = new THREE.CylinderGeometry(settings.extensionRadius, settings.extensionRadius, 1, 24);
+    // Matches BUTTON_EXTERIOR's own diameter (scaled the same way the cap itself is, via
+    // buttonRadius) rather than an independent radius -- it's meant to visually read as
+    // the exterior shell's own material continuing down to the base, not a narrower rod
+    // peeking out from inside it.
+    var extRadius = settings.buttonRadius * NATURAL_EXTERIOR_RADIUS;
+    var extGeo = new THREE.CylinderGeometry(extRadius, extRadius, 1, 24);
 
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
