@@ -538,6 +538,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     pass.edgeGlow = 0;
     pass.edgeThickness = 1.5;
     pass.hiddenEdgeColor.set(0x000000);
+    // OutlinePass composites its edge color with THREE.AdditiveBlending by default, which
+    // makes a black outlineColor (this project's default -- CLAUDE.md matches the geometry
+    // outline's own flat black) a no-op: adding (0,0,0) to the scene changes nothing, so the
+    // edge was rendered but invisible. Normal (alpha) blending composites correctly for any
+    // edge color, including black.
+    pass.overlayMaterial.blending = THREE.NormalBlending;
   });
   composer.addPass(outlinePassBase);
   composer.addPass(outlinePassCap);
