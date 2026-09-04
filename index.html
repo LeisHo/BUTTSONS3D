@@ -354,6 +354,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // screen-space pass; this maps directly to OutlinePass's own edgeThickness (screen-space
     // pixels, via its internal blur kernel radius), an entirely different unit/mechanism.
     outlinePassThickness: 1.5,
+    // Strength/Glow, ported from the HANDO project's own OutlinePass slider set (that
+    // project exposes edgeStrength/edgeGlow directly; this project previously hardcoded them
+    // as constants in makeOutlinePass()). Defaults kept at this project's existing hardcoded
+    // values (5/0) rather than HANDO's own (8/0), so turning these into sliders doesn't
+    // silently change the current look -- only makes it tunable.
+    outlinePassStrength: 5,
+    outlinePassGlow: 0,
 
     debugWireframe: false,
     debugHideBase: false,
@@ -383,7 +390,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
-      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlinePassThickness", "outlineColor"],
+      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow", "outlineColor"],
       debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior"]
     },
     _collapsedGroups: ["devpanel", "grid", "button", "lighting", "camera", "scene"]
@@ -443,6 +450,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "toonHighlightCeiling", label: "Toon Highlight Ceiling Brightness", min: 0, max: 100, step: 1, unit: "%", material: true },
     { key: "outlineThickness", label: "Outline Thickness (Geometry)", min: 0, max: 0.3, step: 0.005, unit: "(x)", outline: true },
     { key: "outlinePassThickness", label: "Outline Thickness (Screen-Space Pass)", min: 0, max: 4, step: 0.05, unit: "(Px)", outline: true },
+    { key: "outlinePassStrength", label: "Outline Edge Strength (Screen-Space Pass)", min: 0, max: 15, step: 0.5, unit: "(x)", outline: true },
+    { key: "outlinePassGlow", label: "Outline Edge Glow (Screen-Space Pass)", min: 0, max: 5, step: 0.1, unit: "(x)", outline: true },
 
     { key: "devTitleFontSize", label: "Dev Panel Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-title-font-size" },
     { key: "devTabFontSize", label: "Desktop/Mobile Tab Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-tab-font-size" },
@@ -593,9 +602,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   composer.addPass(new RenderPass(scene, camera));
   function makeOutlinePass() {
     var pass = new OutlinePass(new THREE.Vector2(window.innerWidth || 1, window.innerHeight || 1), scene, camera);
-    pass.edgeStrength = 5;
-    pass.edgeGlow = 0;
-    pass.edgeThickness = settings.outlinePassThickness; // kept in sync by refreshOutlines()
+    pass.edgeStrength = settings.outlinePassStrength; // kept in sync by refreshOutlines()
+    pass.edgeGlow = settings.outlinePassGlow;
+    pass.edgeThickness = settings.outlinePassThickness;
     pass.hiddenEdgeColor.set(0x000000);
     // OutlinePass composites its edge color with THREE.AdditiveBlending by default, which
     // makes a black outlineColor (this project's default -- CLAUDE.md matches the geometry
@@ -817,6 +826,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       pass.enabled = usePass;
       pass.visibleEdgeColor.set(settings.outlineColor);
       pass.edgeThickness = settings.outlinePassThickness;
+      pass.edgeStrength = settings.outlinePassStrength;
+      pass.edgeGlow = settings.outlinePassGlow;
     });
   }
 
