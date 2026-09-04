@@ -309,6 +309,50 @@ Verified:
   local-dev-server ERR_CONNECTION_RESET from rapid reloads).
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 08:21 AM - (in progress) EDT
+
+User reported "the entire thing is very very laggy" and pasted a "set
+defaults" Copy Settings dump.
+
+Added:
+- Set defaults from the pasted dump (smaller 14x14 grid, camera
+  position/Yaw/Pitch/Zoom, outline thickness/color/pass strength, a 2nd
+  saved camera preset, panel item order/collapsed-group state) per
+  CLAUDE.md 12m.
+
+Fixed (the important one):
+- Root-caused the lag via direct measurement, not guessing: timed
+  composer.render() with gl.finish() synchronization (forces the
+  measurement to include actual GPU completion, not just command
+  submission) and isolated each OutlinePass instance's own cost by
+  toggling .enabled. Found each pass costs a near-constant ~40ms/frame
+  in this dev environment REGARDLESS of selected-object count (0/1/2/4
+  enabled passes measured 4/43/83/124ms) -- OutlinePass's own internal
+  machinery (mask/depth render, edge detection, 2-stage blur, overlay
+  composite) is fixed per-pass overhead. This confirmed the 4-pass
+  checkerboard split added 2 rounds ago (to fix cross-button outline
+  merging) was the direct cause, scaling almost exactly linearly with
+  pass count.
+- Merged the 4 passes (base-checkerboard-A/B + cap-checkerboard-A/B)
+  into 2 (checkerboard-A/B, each cell's base+cap meshes sharing one
+  array) -- still fixes the actual reported cross-button merging bug
+  (orthogonally-adjacent cells never share a selection); gives up only
+  the narrower guarantee that a cell's own base-to-cap seam always
+  renders (both now share one pass) -- a much smaller trade than the
+  lag it removes.
+
+Verified:
+- Prototyped the 2-pass merge live (via window.__debug) before writing
+  it into source, confirming the measured win (123.7ms -> 60.2ms) and
+  that cross-button merging stayed fixed, before committing to the
+  code change.
+- After the code change: composer.render() measured at 23.7ms/frame
+  (~5.2x faster than the original 123.7ms, a bigger win than the ~2x
+  pass-count ratio alone predicts). Re-confirmed cross-button merging
+  is still fixed via screenshot (clean per-button outlines, no
+  connected wavy lines) and the console stays clean on 2 fresh tabs.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
