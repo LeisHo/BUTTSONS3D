@@ -292,8 +292,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   // ---- Settings ----
   var DEFAULT_SETTINGS = {
-    colCount: 26,
-    rowCount: 15,
+    colCount: 14,
+    rowCount: 14,
     colSpacing: 0.7,
     rowSpacing: 0.75,
     rowXOffset: -2,
@@ -323,9 +323,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     lightAngleY: -35,
     lightAngleZ: -77,
 
-    cameraX: 70.98324539302237,
-    cameraHeight: 56.636594558232616,
-    cameraDistance: 59.45795162691759,
+    cameraX: 120.30616050024554,
+    cameraHeight: 133.10276053474442,
+    cameraDistance: 90.82719320499793,
     cameraFov: 10,
     // Yaw/Pitch/Zoom, ported from OKCILCOKCID's camera architecture: DERIVED from
     // camera.position/controls.target (no independent state to restore), so they're NOT
@@ -336,9 +336,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // regardless (see syncCameraSettingsFromLive(), called from animate()). Zoom (distance-
     // to-target) IS replayed normally like any other camera value; its default below is the
     // exact distance from the cameraX/Height/Distance position above to the origin target.
-    cameraYaw: -129.95067282459314,
-    cameraPitch: -31.45237707681217,
-    cameraZoom: 108.54295454495666,
+    cameraYaw: -124.24047329909014,
+    cameraPitch: -40.208239776340264,
+    cameraZoom: 200.87152442081072,
 
     cellShadingEnabled: true,
     toonBands: 8,
@@ -346,20 +346,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     toonHighlightCeiling: 100,
 
     outlineEnabled: true,
-    outlineThickness: 0.215,
-    outlineColor: "#ff7070",
+    outlineThickness: 0.21,
+    outlineColor: "#000000",
     outlineUsePostprocessing: true,
     // Separate from outlineThickness above -- that one puffs the geometry (inverted-hull)
     // outline meshes outward in local space (a scale factor), which has no meaning for the
     // screen-space pass; this maps directly to OutlinePass's own edgeThickness (screen-space
     // pixels, via its internal blur kernel radius), an entirely different unit/mechanism.
-    outlinePassThickness: 1.5,
+    outlinePassThickness: 2.4,
     // Strength/Glow, ported from the HANDO project's own OutlinePass slider set (that
     // project exposes edgeStrength/edgeGlow directly; this project previously hardcoded them
     // as constants in makeOutlinePass()). Defaults kept at this project's existing hardcoded
     // values (5/0) rather than HANDO's own (8/0), so turning these into sliders doesn't
     // silently change the current look -- only makes it tunable.
-    outlinePassStrength: 5,
+    outlinePassStrength: 10.5,
     outlinePassGlow: 0,
 
     debugWireframe: false,
@@ -380,7 +380,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     _panelGeometryDesktop: { top: 12, left: 1236, width: 300, height: 560 },
     _panelGeometryMobile: null,
     _savedCameras: [
-      { name: "Camera 1", cameraX: 70.98324539302234, cameraHeight: 56.63659455823262, cameraDistance: 59.45795162691757, cameraFov: 10, cameraZoom: 108.54295454495664 }
+      { name: "Camera 1", cameraX: 70.98324539302234, cameraHeight: 56.63659455823262, cameraDistance: 59.45795162691757, cameraFov: 10, cameraZoom: 108.54295454495664 },
+      { name: "Camera 2", cameraX: 45.66694552271302, cameraHeight: 45.05973764844779, cameraDistance: 48.21761575139796, cameraFov: 10, cameraZoom: 79.78904567047564 }
     ], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraZoom }] -- position+FOV+zoom only, no yaw/pitch/target (matches OKCILCOKCID: those are derived, not part of a preset's stored identity)
     _groupOrder: ["devpanel", "grid", "button", "lighting", "camera", "scene", "shading", "debug"],
     _itemOrderByGroup: {
@@ -390,10 +391,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
-      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow", "outlineColor"],
+      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow"],
       debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior"]
     },
-    _collapsedGroups: ["devpanel", "grid", "button", "lighting", "camera", "scene"]
+    _collapsedGroups: ["devpanel", "button", "lighting", "scene", "camera", "debug"]
   };
 
   var GROUP_DEFS = [
@@ -584,20 +585,35 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // default per-mesh inverted-hull child meshes (CLAUDE.md 12n debug/variant-toggle
   // pattern -- exposed as a checkbox, not a silent internal choice).
   //
-  // FOUR passes, not two: OutlinePass draws an edge wherever its own selection's mask
+  // TWO passes, not one: OutlinePass draws an edge wherever its own selection's mask
   // touches an UNselected pixel -- it has no way to tell two different SELECTED objects
-  // apart. A single shared selectedObjects array per mesh-type (as an earlier version of
-  // this had) merges any two same-type cells whose silhouettes touch on screen into one
-  // combined outline with no seam between them -- visible as long connected wavy lines
-  // running along whole rows of buttons, reported directly by the user. Splitting each
-  // mesh-type's selection into a checkerboard 2-coloring by grid cell ((row+col)%2, see
-  // regenerateGrid()) means no two ORTHOGONALLY-adjacent cells (the touching case that
-  // actually shows up in a dense grid) ever share a selection array, so they always get a
-  // seam. This is NOT a full per-object solution (one OutlinePass per cell would be, but
-  // is computationally infeasible for a grid this size -- hundreds of full-screen
-  // composite passes); a diagonal touch between two same-color cells could still merge,
-  // though that's a much rarer/subtler case at typical spacing than the row-wise merging
-  // this specifically fixes.
+  // apart. A single shared selectedObjects array (an earlier version of this had exactly
+  // one) merges any two cells whose silhouettes touch on screen into one combined outline
+  // with no seam between them -- visible as long connected wavy lines running along whole
+  // rows of buttons, reported directly by the user. Splitting the selection into a
+  // checkerboard 2-coloring by grid cell ((row+col)%2, see regenerateGrid()) -- EVERY mesh
+  // of a cell (base + exterior + interior + extension) goes into that cell's one pass --
+  // means no two ORTHOGONALLY-adjacent cells (the touching case that actually shows up in
+  // a dense grid) ever share a selection array, so they always get a seam. Not a full
+  // per-object solution (one OutlinePass per cell would be, but is computationally
+  // infeasible -- see below); a diagonal touch between two same-color cells could still
+  // merge, and a cell's own base-to-cap seam is no longer separately guaranteed either
+  // (both live in the same pass now) -- a much rarer/subtler case than the row-wise
+  // cross-button merging this specifically fixes.
+  //
+  // An EARLIER version of this fix used FOUR passes (base and cap split into their own
+  // checkerboard pair each, so a button's own base-to-cap seam was also guaranteed). Direct
+  // measurement (gl.finish()-synchronized timing around composer.render(), isolating each
+  // pass's own cost) found each OutlinePass instance costs a near-constant ~40ms per frame
+  // in this dev environment REGARDLESS of how many objects it selects -- OutlinePass's own
+  // internal machinery (mask/depth render, edge detection, 2-stage separable blur, overlay
+  // composite -- several render-target switches per pass) is fixed per-pass overhead, not
+  // scene-complexity-driven. Going from 1 to 4 passes scaled that cost almost exactly
+  // linearly (measured 4ms/43ms/83ms/124ms for 0/1/2/4 enabled passes), directly causing a
+  // real, reported "very very laggy" regression. Dropping to 2 passes (this version) merges
+  // base+cap into one shared selection per checkerboard color, measured at very close to
+  // half the 4-pass cost, while still fixing the actual reported bug (cross-button row
+  // merging) -- the base-to-cap seam guarantee was a nice-to-have this trade gives up.
   var composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   function makeOutlinePass() {
@@ -666,11 +682,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     composer.addPass(pass);
     return pass;
   }
-  var outlinePassBaseA = makeOutlinePass();
-  var outlinePassBaseB = makeOutlinePass();
-  var outlinePassCapA = makeOutlinePass();
-  var outlinePassCapB = makeOutlinePass();
-  var ALL_OUTLINE_PASSES = [outlinePassBaseA, outlinePassBaseB, outlinePassCapA, outlinePassCapB];
+  var outlinePassA = makeOutlinePass();
+  var outlinePassB = makeOutlinePass();
+  var ALL_OUTLINE_PASSES = [outlinePassA, outlinePassB];
   composer.addPass(new OutputPass());
 
   // Directional + ambient light, always both present (no longer tied to the cell-shading
@@ -882,10 +896,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     if (!modelReady) return; // first call is deferred until the model finishes loading (see Init)
     cells.forEach(function (c) { c.group.parent.remove(c.group); });
     cells = [];
-    // Checkerboard split (see the outlinePass* construction comment above) -- A/B keyed by
-    // (row+col)%2, not one flat array per mesh-type.
-    var baseOutlineObjectsA = [], baseOutlineObjectsB = [];
-    var capOutlineObjectsA = [], capOutlineObjectsB = [];
+    // Checkerboard split (see the outlinePassA/B construction comment above) -- A/B keyed by
+    // (row+col)%2; every mesh of a cell (base + cap parts) goes into that one cell's array.
+    var outlineObjectsA = [], outlineObjectsB = [];
 
     var cols = settings.colCount, rows = settings.rowCount;
     var spacingX = settings.colSpacing * (NATURAL_BASE_RADIUS * settings.baseRadius * 2.2);
@@ -948,11 +961,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         addOutline(cell, extMesh, "xz"); // radius only -- its own Y already tracks the live gap exactly
 
         if ((r + c) % 2 === 0) {
-          baseOutlineObjectsA.push(baseMesh);
-          capOutlineObjectsA.push(exteriorMesh, unpressedMesh, pressedMesh, extMesh);
+          outlineObjectsA.push(baseMesh, exteriorMesh, unpressedMesh, pressedMesh, extMesh);
         } else {
-          baseOutlineObjectsB.push(baseMesh);
-          capOutlineObjectsB.push(exteriorMesh, unpressedMesh, pressedMesh, extMesh);
+          outlineObjectsB.push(baseMesh, exteriorMesh, unpressedMesh, pressedMesh, extMesh);
         }
 
         cells.push(cell);
@@ -960,10 +971,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       }
     }
 
-    outlinePassBaseA.selectedObjects = baseOutlineObjectsA;
-    outlinePassBaseB.selectedObjects = baseOutlineObjectsB;
-    outlinePassCapA.selectedObjects = capOutlineObjectsA;
-    outlinePassCapB.selectedObjects = capOutlineObjectsB;
+    outlinePassA.selectedObjects = outlineObjectsA;
+    outlinePassB.selectedObjects = outlineObjectsB;
     refreshOutlines(); // re-applies enabled/color to the passes now that selectedObjects exist
   }
 
