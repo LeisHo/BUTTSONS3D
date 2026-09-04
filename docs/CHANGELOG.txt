@@ -227,6 +227,53 @@ console output) since local re-testing has been exhausted without a
 reproduction.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 07:49 AM - 07:56 AM EDT
+
+User pasted a Copy Settings dump ("set defaults") plus 3 requests: an
+OutlinePass-specific thickness slider, "weird outline overlap still
+occurs with black outlines," and the key diagnostic clue -- "when i
+change the outline color, the outline does change, but the black lines
+overlapping surfaces dont."
+
+Added:
+- "Outline Thickness (Screen-Space Pass)" slider (outlinePassThickness,
+  0-4px, maps to OutlinePass.edgeThickness) -- separate from the
+  existing Outline Thickness slider, which only puffs the geometry
+  (inverted-hull) outline meshes outward in local space and has no
+  meaning for the screen-space pass. Relabeled the existing one
+  "(Geometry)" to disambiguate.
+- Set defaults from the pasted dump (camera position/Yaw/Pitch/Zoom/FOV,
+  outline thickness/color/outlineUsePostprocessing now ON by default,
+  1 saved camera preset, panel geometry/collapsed-group state) -- no
+  git-tracked settings log exists yet for this project, so the pasted
+  values became the new defaults directly per CLAUDE.md 12m.
+
+Diagnosed (the important finding):
+- Reproduced the user's exact scene (their pasted settings, including
+  the narrow 10-degree FOV and far zoom) and found the "black lines
+  overlapping surfaces" the user described -- dark seam marks at the
+  base-to-cap gap between neighboring buttons. Tested decisively by
+  turning outlineEnabled OFF entirely: the dark seams were STILL
+  present, proving they are NOT an outline-system artifact at all --
+  they're the extension cylinder's own toon-shaded shadow side
+  (toonShadowFloor is 0% in the user's settings, i.e. true black
+  shadows), made visible in the gaps at this specific steep/narrow-FOV
+  camera angle. This directly explains the user's own diagnostic clue:
+  changing outlineColor recolors the actual outline (pink, correctly)
+  but has no effect on these dark seams because they were never outline
+  pixels to begin with.
+- Reported this finding to the user with the controlled-experiment
+  screenshot (outline off, dark seams still there) rather than
+  continuing to treat it as an outline bug.
+
+Verified:
+- New thickness slider tested at both extremes (0 and 4) -- visibly
+  changes screen-space outline glow/thickness, no console errors.
+- Set-defaults values verified against a cleared localStorage (so stale
+  saved state from earlier in-session testing couldn't mask whether the
+  new DEFAULT_SETTINGS values actually took effect).
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
