@@ -1,8 +1,9 @@
-# <PROJECT NAME> — <one-line tagline>
+# BUTTSONS3D — real 3D button grid, Three.js prototype
 
-<1-3 sentence description: what this project is, what it does. If it's a
-prototype/research project rather than a production app, say so plainly here
-(see DOGGO's README for an example: "This is not a production app.").>
+A 3D reimplementation of the BUTTSONS 2D project's press/hold interaction,
+using a real Rhino-modeled button loaded from an FBX file instead of
+procedural primitives. This is a single-user prototype, not a production
+app.
 
 See `docs/PROJECT_SUMMARY.md` for the current state (objective, scope,
 current state, recent decisions, known limitations, next action — the part
@@ -12,33 +13,34 @@ don't let real content drift into this file instead of those.
 
 ## How to run it
 
-<Exact steps to run/use the project. No build step? Say so. Needs a server,
-an API key, a specific Python/Node version? State it here precisely — this
-is the one doc a new person (or a fresh AI chat) needs to get the thing
-running without guessing.>
+No build step. Run `scripts/active/dev_server.py` (Python 3, standard
+library only) from the project root — it serves the whole repo as static
+files on `http://localhost:8938` with no-cache response headers, plus one
+POST route (`/api/save-settings`, currently unused by the client — see
+`docs/PROJECT_SUMMARY.md`'s Known Limitations). Then open
+`http://localhost:8938/index.html`. Three.js itself loads from a CDN via an
+import map in `index.html` — no `npm install` needed.
 
 ## Project structure
 
 ```
-<PROJECT NAME>/
-├── src/                     <what actually ships — see docs/CODE_SUMMARY.md>
+BUTTSONS3D/
+├── index.html                 single-file app: scene, model loading,
+│                               interaction, dev panel — see docs/CODE_SUMMARY.md
 ├── data/
-│   ├── raw/                 <scraped/dumped/regenerable inputs — gitignored>
-│   └── processed/           <data the app actually reads>
-├── docs/                    <README (pointer only — this file), PROJECT_SUMMARY.md,
-│                             CODE_SUMMARY.md, HANDOFF.md, CHANGELOG.txt>
+│   ├── BUTTON MODEL.fbx        Rhino-exported model index.html loads at runtime
+│   ├── BUTTON MODEL.3dm*       Rhino source/backup files, not read by the app
+│   ├── raw/, processed/        present per the standard skeleton, currently empty
+├── docs/                       PROJECT_SUMMARY.md, CODE_SUMMARY.md,
+│                               PROJECT_PROGRESS.md, CHANGELOG.txt
 ├── scripts/
-│   ├── active/               <scripts still run regularly>
-│   └── archive/               <one-off scripts that already did their job>
-├── logs/                    <log entries from tests, audits, queries, etc>
-├── results/                 <raw results of tests/runs>
-└── tests/                   <if a real test suite exists>
+│   └── active/dev_server.py    local static-file server, port 8938
+└── .claude/                    launch.json (Browser-pane dev-server config), settings
 ```
 
-<Adjust this tree to the project's actual layout — this is the standard
-skeleton (CLAUDE.md §11), not every project needs every folder. A project
-small enough to justify a single-file architecture can skip most of this
-and say so explicitly in its own CLAUDE.md instead.>
+This project is small enough to use a single-file architecture for the app
+itself (`index.html`) rather than a `src/` tree — see `docs/CODE_SUMMARY.md`
+for how that one file is organized internally.
 
 ## Known limitations
 

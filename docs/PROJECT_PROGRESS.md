@@ -1,4 +1,4 @@
-# <PROJECT NAME> — Project Progress
+# BUTTSONS3D — Project Progress
 
 **This is a live document, not a log.** It holds only the current picture —
 what's being worked on right now, what's recently done, and what's next. It
@@ -18,28 +18,38 @@ work seamlessly from there.
 
 ## Currently working on
 
-<What's actively in progress right now. If nothing is actively in progress,
-say "Nothing in progress — see What's next" rather than leaving this blank
-or stale.>
+Nothing in progress — see What's next.
 
 ## Recently completed
 
-<A short list of what was *just* finished — enough to explain how the
-project got to its current state, not a full history. A handful of bullets
-at most. Once something here stops being relevant context for what's
-current or next, drop it — it's already permanently recorded in
-CHANGELOG.txt, so nothing is lost by removing it from here.>
+- Fixed the screen-space `OutlinePass` outline toggle being invisible: it
+  composites edges via `THREE.AdditiveBlending` by default, which is a
+  no-op for the project's default black outline color. Forced
+  `THREE.NormalBlending` on both `outlinePassBase`/`outlinePassCap`'s
+  overlay materials instead.
+- Integrated the user's 2nd FBX re-export of `BUTTON MODEL.fbx` — verified
+  identical part names and bounding boxes to the prior version, so no code
+  changes were needed. Also confirmed Rhino's Active/Archived master-layer
+  organization does not survive into the FBX export (only flat object
+  names do), answering the user's question about duplicate "Active"
+  sublayer names across different master layers.
+- (Prior round) Fixed a real interaction bug where a button would
+  permanently stop registering clicks after enough presses — root-caused
+  to pointer capture on `canvas` conflicting with OrbitControls' own
+  capture handling; moved move/up/cancel listeners to `window`.
+- (Prior round) Added the geometry-vs-screen-space outline toggle, camera
+  OrbitControls rework with saved camera presets, and settings schema
+  versioning.
 
 ## What's next
 
-<The concrete next step(s), ordered by what actually comes first. Keep this
-in sync with PROJECT_SUMMARY.txt's "Next Action" rather than letting the two
-drift apart — this section can go into more operational detail; that one
-stays a one-line pointer.>
+No specific next action is currently pending. Likely future work, not yet
+requested: wire Save Settings through to the git-tracked settings log
+(`data/processed/dev-panel-settings.json` via
+`scripts/active/dev_server.py`'s existing `/api/save-settings` route,
+currently unused by the client) the way the sibling BUTTSONS 2D project
+already does — see PROJECT_SUMMARY.md's Scope section.
 
 ## Open questions / blockers
 
-<Anything genuinely unresolved that the next session needs to know about
-before proceeding — a decision waiting on the user, an external dependency,
-a known bug without a fix yet. Remove an item once it's resolved; don't
-leave it here as stale history either.>
+None currently open.

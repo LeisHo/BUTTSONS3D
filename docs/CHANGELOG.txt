@@ -1,27 +1,59 @@
-<PROJECT NAME> -- CHANGELOG
+BUTTSONS3D -- CHANGELOG
 ================================================================================
 
-PROJECT START: <YYYY-MM-DD>  -  <HH:MM AM/PM [timezone]>
+NOTE (2026-09-04): This file's template was never actually filled in despite
+real project history already existing (FBX model integration, OrbitControls
+camera rework, the stuck-pressed-button pointer-capture fix, the geometry
+outline system, saved camera presets, settings schema versioning, etc. --
+all committed to git separately, e.g. commits a0b0fa9 and 0a8cfeb, without a
+matching changelog entry). Per CLAUDE.md 4a, that gap is noted here honestly
+rather than backfilled with reconstructed entries; this is the first real
+entry, not a continuous history from project start.
 
 --------------------------------------------------------------------------------
-<YYYY-MM-DD>  -  <HH:MM AM/PM start - HH:MM AM/PM end, or a single timestamp>
+2026-09-04 -- 03:44 AM (single timestamp; session start not separately measured)
 
-<Prose description of what this session/change did and why -- not just a
-bare bullet list of file names. State real numbers where relevant (per
-CLAUDE.md §0c: no rounding, no invented figures). Sub-headers like "Added:",
-"Fixed:", "Verified:" are useful when a session touched several distinct
-things; skip them for a small single-purpose entry.>
-
-Added:
-- <what was added, and why.>
+Fixed the screen-space OutlinePass outline toggle (`outlineUsePostprocessing`)
+being invisible, and updated the Rhino-exported BUTTON MODEL source files to
+the user's latest export.
 
 Fixed:
-- <what was broken, the real root cause if known, and what the fix actually
-  changed.>
+- OutlinePass composites its edge color with THREE.AdditiveBlending by
+  default. This project's outline color defaults to black (#000000), and
+  additive blending with black adds (0,0,0) to the scene -- a no-op. The
+  pass was rendering every frame, just invisibly, for exactly the color
+  everyone was testing with. Root-caused by live-debugging in the browser:
+  setting visibleEdgeColor to cyan made the outline immediately visible,
+  confirming the pass itself worked and the color was the issue. Fix: set
+  `pass.overlayMaterial.blending = THREE.NormalBlending` on both
+  `outlinePassBase` and `outlinePassCap` (index.html) so the edge alpha-
+  blends over the scene instead of adding to it, which composites correctly
+  for any edge color including black.
+
+Updated:
+- `data/BUTTON MODEL.fbx` (+ `.fbxbak`) replaced with the user's latest
+  Rhino export. Verified via live FBXLoader inspection in the browser: all
+  4 named parts (BUTTON_BASE, BUTTON_EXTERIOR, BUTTON_INTERIOR_-_UNPRESSED,
+  BUTTON_INTERIOR_-_PRESSED) are present with bounding boxes identical to
+  the prior version, so no code changes were needed. Also answered a
+  standing question from the user: Rhino's FBX export does not preserve the
+  Active/Archived master-layer structure from the source .3dm -- only
+  flat object-level names survive in the export -- so duplicate "Active"
+  sublayer names under different master layers are not a source of
+  ambiguity for this pipeline, and Archived-layer geometry is confirmed
+  absent from the exported file.
 
 Verified:
-- <what was actually tested/checked, and how -- per CLAUDE.md §8, never
-  claim something was verified if it wasn't.>
+- Live in the Browser pane, both before and after the fix: toggled the
+  "Outline: Use Screen-Space Pass" checkbox on a clean page reload and
+  screenshotted the result. Before the fix, the outline was essentially
+  invisible against the grid; after, it renders as a bold black silhouette
+  matching the existing geometry (inverted-hull) outline's appearance.
+  Confirmed the checkbox's off state (geometry outline) is unaffected.
+  Checked the browser console for errors after reload -- none. Timing was
+  not captured via start/finish shell timestamps this turn (task picked up
+  mid-session after a context-compaction resume) -- logged as
+  Actual: NOT MEASURED in ETA History accordingly.
 
 --------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
