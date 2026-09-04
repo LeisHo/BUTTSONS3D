@@ -590,30 +590,35 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // apart. A single shared selectedObjects array (an earlier version of this had exactly
   // one) merges any two cells whose silhouettes touch on screen into one combined outline
   // with no seam between them -- visible as long connected wavy lines running along whole
-  // rows of buttons, reported directly by the user. Splitting the selection into a
-  // checkerboard 2-coloring by grid cell ((row+col)%2, see regenerateGrid()) -- EVERY mesh
-  // of a cell (base + exterior + interior + extension) goes into that cell's one pass --
-  // means no two ORTHOGONALLY-adjacent cells (the touching case that actually shows up in
-  // a dense grid) ever share a selection array, so they always get a seam. Not a full
-  // per-object solution (one OutlinePass per cell would be, but is computationally
-  // infeasible -- see below); a diagonal touch between two same-color cells could still
-  // merge, and a cell's own base-to-cap seam is no longer separately guaranteed either
-  // (both live in the same pass now) -- a much rarer/subtler case than the row-wise
-  // cross-button merging this specifically fixes.
+  // rows of buttons, reported directly by the user.
   //
-  // An EARLIER version of this fix used FOUR passes (base and cap split into their own
-  // checkerboard pair each, so a button's own base-to-cap seam was also guaranteed). Direct
-  // measurement (gl.finish()-synchronized timing around composer.render(), isolating each
-  // pass's own cost) found each OutlinePass instance costs a near-constant ~40ms per frame
-  // in this dev environment REGARDLESS of how many objects it selects -- OutlinePass's own
-  // internal machinery (mask/depth render, edge detection, 2-stage separable blur, overlay
-  // composite -- several render-target switches per pass) is fixed per-pass overhead, not
-  // scene-complexity-driven. Going from 1 to 4 passes scaled that cost almost exactly
-  // linearly (measured 4ms/43ms/83ms/124ms for 0/1/2/4 enabled passes), directly causing a
-  // real, reported "very very laggy" regression. Dropping to 2 passes (this version) merges
-  // base+cap into one shared selection per checkerboard color, measured at very close to
-  // half the 4-pass cost, while still fixing the actual reported bug (cross-button row
-  // merging) -- the base-to-cap seam guarantee was a nice-to-have this trade gives up.
+  // Direct measurement (gl.finish()-synchronized timing around composer.render(), isolating
+  // each pass's own cost by toggling .enabled) found each OutlinePass instance costs a
+  // near-constant ~40ms per frame in this dev environment REGARDLESS of how many objects it
+  // selects -- OutlinePass's own internal machinery (mask/depth render, edge detection,
+  // 2-stage separable blur, overlay composite -- several render-target switches per pass) is
+  // fixed per-pass overhead, not scene-complexity-driven (measured 4/43/83/124ms for 0/1/2/4
+  // enabled passes -- almost exactly linear). A 4-pass version of this fix (base and cap each
+  // split into their own checkerboard pair) caused a real, reported "very very laggy"
+  // regression for exactly this reason. So 2 passes total is the perf-driven ceiling here --
+  // every further separation guarantee below has to be encoded into just those 2, not by
+  // adding more.
+  //
+  // Within that 2-pass budget, regenerateGrid() assigns each cell's meshes by BOTH a
+  // checkerboard color ((row+col)%2) AND a base-vs-cap swap: a cell's base and its own cap
+  // (exterior+interior+extension) always land in DIFFERENT passes, and which pass is which
+  // flips with the checkerboard color. Working through what that guarantees:
+  //  - A cell's own base and cap are ALWAYS in different passes -> base-to-cap seam always
+  //    renders, satisfying "the button should have its own outline and so should the base."
+  //  - Two orthogonally-adjacent cells' SAME-type meshes (base-vs-neighbor's-base, or
+  //    cap-vs-neighbor's-cap) are always in different passes too (opposite checkerboard
+  //    colors) -> the original cross-button row-merging bug stays fixed.
+  //  - The one case NOT separated: a cell's base and its ORTHOGONALLY-ADJACENT NEIGHBOR's cap
+  //    end up in the same pass (the swap uses the same 2 passes for both distinctions). In
+  //    practice the base (wide, low) and a neighboring cell's cap (narrower, sits above its
+  //    OWN base) rarely touch in screen space at normal spacing/camera angles the way two
+  //    same-type neighbors do -- accepted as the remaining edge case, same spirit as the
+  //    diagonal-touch case already accepted for same-type neighbors.
   var composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   function makeOutlinePass() {
@@ -960,10 +965,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         addOutline(cell, pressedMesh);
         addOutline(cell, extMesh, "xz"); // radius only -- its own Y already tracks the live gap exactly
 
+        // Base and cap SWAP which pass they land in by checkerboard parity (not both always
+        // going to the same one) -- see the outlinePassA/B construction comment above for why
+        // this, not a 3rd/4th pass, is how a cell's own base-to-cap seam is restored without
+        // the lag a real 4-pass split cost.
         if ((r + c) % 2 === 0) {
-          outlineObjectsA.push(baseMesh, exteriorMesh, unpressedMesh, pressedMesh, extMesh);
+          outlineObjectsA.push(baseMesh);
+          outlineObjectsB.push(exteriorMesh, unpressedMesh, pressedMesh, extMesh);
         } else {
-          outlineObjectsB.push(baseMesh, exteriorMesh, unpressedMesh, pressedMesh, extMesh);
+          outlineObjectsB.push(baseMesh);
+          outlineObjectsA.push(exteriorMesh, unpressedMesh, pressedMesh, extMesh);
         }
 
         cells.push(cell);
