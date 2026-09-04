@@ -56,6 +56,32 @@ Verified:
   Actual: NOT MEASURED in ETA History accordingly.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 03:55 AM - 03:59 AM EDT
+
+Added 3 Debug-group checkboxes to independently hide the base, exterior,
+and interior model parts, per direct request.
+
+Added:
+- "Hide Base Model", "Hide Button Exterior Model", "Hide Button Interior
+  Model" checkboxes, each toggling `mesh.visible` for the corresponding
+  per-cell mesh(es). The interior meshes (unpressed/pressed) already swap
+  visibility every press/release independent of this new flag, so that
+  logic was consolidated into one `updateInteriorVisibility(cell)` helper
+  (called from `pressCell`/`releaseCell`/`cancelPressCell`/
+  `regenerateGrid`) instead of being set inline in 4 places -- otherwise
+  the debug hide flag would get silently overwritten the next time that
+  cell was clicked.
+
+Verified:
+- Toggled each checkbox individually in the Browser pane on a clean
+  reload and screenshotted the result: hiding the exterior leaves the
+  interior visible on its own; hiding the interior leaves a hollow
+  exterior shell; hiding the base removes the red cylinder under each
+  button, exposing the ground. Clicked a button with the interior hidden
+  -- no console errors, press/release still functions. Reverted all 3 to
+  off and confirmed no errors remained.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
