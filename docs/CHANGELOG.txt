@@ -193,6 +193,40 @@ Verified:
   errors on either fresh tab.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 07:35 AM - (in progress) EDT
+
+User reported the OutlinePass occlusion bug "still the same" after a
+confirmed hard refresh, contradicting the prior round's own live
+verification.
+
+Investigated (no code change from this step):
+- Confirmed via `git log origin/main..HEAD` the fix was genuinely
+  unpushed, and confirmed this project has no Vercel deployment (no
+  .vercel/vercel.json) -- ruled out a stale-deployment explanation.
+- Confirmed only one process is bound to port 8938 (no conflicting/
+  duplicate dev server instance).
+- Re-verified the fix at multiple zoom levels including one matching
+  the density of the user's screenshot, using the project's actual
+  current grid settings (26 cols x 15 rows) -- could not reproduce the
+  reported bug.
+
+Hardened (real change, even without reproducing the bug):
+- The occlusion fix's implementation was a targeted find-and-replace
+  against the exact stock OutlinePass shader text -- fragile by
+  construction (needed 2 rounds of exact-whitespace debugging to even
+  match in this session's own test browser). Replaced it with a full,
+  self-authored fragment shader (uniform names confirmed against
+  OutlinePass.js fetched directly from the CDN), removing the
+  dependency on any exact substring surviving intact in a different
+  environment. Functionally identical logic; verified working again on
+  a fresh tab at the same zoom/settings.
+
+Still unresolved: could not reproduce the user's report even after
+hardening. Asked the user for further diagnostic detail (browser
+console output) since local re-testing has been exhausted without a
+reproduction.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
