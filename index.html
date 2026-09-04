@@ -307,6 +307,21 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     baseHeight: 1,
     buttonRadius: 1,
     buttonHeight: 0.41,
+    // A safety margin on the gap-fill extension cylinder's radius, on top of it already
+    // matching BUTTON_EXTERIOR's own measured radius exactly. Reported directly: "I should
+    // not be able to see under the button" -- verified live that even though the extension's
+    // radius already equals the exterior mesh's own measured bottom-rim radius exactly (both
+    // 1.5 units, confirmed by walking the actual geometry's vertices), a real gap was still
+    // visible from steep/low camera angles. The exterior isn't a flat-bottomed disc -- its
+    // underside curves inward (domes) above the bottom rim, so from a shallow enough viewing
+    // angle the sightline grazes that curve well before reaching the true bottom-rim radius,
+    // making the cap's APPARENT silhouette narrower than its measured radius at exactly that
+    // angle. A plain straight-sided extension cylinder can't compensate for that by matching
+    // the measured radius alone; empirically tested a 30% margin (still showed a visible
+    // sliver) and a 60% margin (fully closed the gap at a deliberately steep test angle) --
+    // 1.5x split the difference, then cross-checked at buttonHeight=1 (unsquashed) to confirm
+    // it doesn't visibly overshoot the cap's own silhouette there either.
+    extensionRadiusMargin: 1.5,
     clickIntensity: 0.56,
     heightGainPerClick: 0.5,
     holdThresholdMs: 250,
@@ -387,7 +402,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     _itemOrderByGroup: {
       devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor"],
       grid: ["colCount", "rowCount", "colSpacing", "rowSpacing", "rowXOffset", "cumulativeRowOffset"],
-      button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
+      button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "extensionRadiusMargin", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
@@ -418,6 +433,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "baseRadius", label: "Base Radius", min: 0.1, max: 2, step: 0.01, unit: "(x)", regen: true },
     { key: "baseHeight", label: "Base Height", min: 0.05, max: 1, step: 0.01, unit: "(x)", regen: true },
     { key: "buttonRadius", label: "Button Radius", min: 0.05, max: 2, step: 0.01, unit: "(x)", regen: true },
+    { key: "extensionRadiusMargin", label: "Extension Radius Margin (vs. Button)", min: 1, max: 2.5, step: 0.05, unit: "(x)", regen: true },
     { key: "buttonHeight", label: "Button Resting Height", min: 0.05, max: 1.5, step: 0.01, unit: "(x)", regen: true },
     { key: "clickIntensity", label: "Click Press Depth", min: 0, max: 1, step: 0.005, unit: "(x)" },
     { key: "heightGainPerClick", label: "Height Gain Per Click", min: 0, max: 0.5, step: 0.002, unit: "(x)" },
@@ -633,57 +649,45 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // edge was rendered but invisible. Normal (alpha) blending composites correctly for any
     // edge color, including black.
     pass.overlayMaterial.blending = THREE.NormalBlending;
-    // Fixes a genuine gap in OutlinePass's own edgeDetectionMaterial (three@0.169.0, this
-    // import map's pinned version -- source confirmed by fetching OutlinePass.js directly
-    // from the CDN and reading getEdgeDetectionMaterial(), not guessed): a "hidden"
-    // (occluded-by-other-geometry) edge pixel gets hiddenEdgeColor for its RGB but the EXACT
-    // SAME alpha (the edge-detection magnitude `d`) as a genuinely visible edge pixel -- the
-    // two differ only by color, never by how strongly they're drawn. Under AdditiveBlending
-    // that was harmless as long as hiddenEdgeColor was black (adding zero draws nothing
-    // either way) -- which is also exactly why a black VISIBLE edge was invisible too, the
-    // original bug this pass's NormalBlending fix above addressed. But NormalBlending has no
-    // such free cancellation: once switched, hidden edges started drawing just as opaquely as
-    // visible ones, right through whatever button is actually occluding them -- reported
-    // directly by the user, with a screenshot, twice (the first attempt at this fix used a
-    // targeted find-and-replace against the exact shader text, which is fragile -- it took 2
-    // rounds of exact-whitespace debugging to even get matching in this session's own test
-    // browser, and the user reported the bug persisting after a confirmed hard refresh, which
-    // rules out ordinary caching as the explanation -- a subtly different served/whitespace-
-    // normalized copy of the substring in their environment was a real enough risk that a
-    // full, self-authored replacement of the whole shader is the more robust fix, not
-    // dependent on any substring surviving intact). Uniform names (maskTexture, texSize,
-    // visibleEdgeColor, hiddenEdgeColor) are the pass's own stable public shape; only the
-    // final 2 lines' logic differs from the stock shader, forcing a hidden edge's alpha to 0
-    // so it contributes nothing under any blending mode -- true depth-respecting occlusion,
-    // not reachable through visibleEdgeColor/hiddenEdgeColor/blending alone.
-    if (pass.edgeDetectionMaterial.uniforms.hiddenEdgeColor) {
-      pass.edgeDetectionMaterial.fragmentShader =
-        "varying vec2 vUv;\n" +
-        "uniform sampler2D maskTexture;\n" +
-        "uniform vec2 texSize;\n" +
-        "uniform vec3 visibleEdgeColor;\n" +
-        "uniform vec3 hiddenEdgeColor;\n" +
-        "void main() {\n" +
-        "  vec2 invSize = 1.0 / texSize;\n" +
-        "  vec4 uvOffset = vec4(1.0, 0.0, 0.0, 1.0) * vec4(invSize, invSize);\n" +
-        "  vec4 c1 = texture2D(maskTexture, vUv + uvOffset.xy);\n" +
-        "  vec4 c2 = texture2D(maskTexture, vUv - uvOffset.xy);\n" +
-        "  vec4 c3 = texture2D(maskTexture, vUv + uvOffset.yw);\n" +
-        "  vec4 c4 = texture2D(maskTexture, vUv - uvOffset.yw);\n" +
-        "  float diff1 = (c1.r - c2.r) * 0.5;\n" +
-        "  float diff2 = (c3.r - c4.r) * 0.5;\n" +
-        "  float d = length(vec2(diff1, diff2));\n" +
-        "  float a1 = min(c1.g, c2.g);\n" +
-        "  float a2 = min(c3.g, c4.g);\n" +
-        "  float visibilityFactor = min(a1, a2);\n" +
-        "  bool isVisibleEdge = 1.0 - visibilityFactor > 0.001;\n" +
-        "  vec3 edgeColor = isVisibleEdge ? visibleEdgeColor : hiddenEdgeColor;\n" +
-        "  gl_FragColor = vec4(edgeColor, 1.0) * vec4(isVisibleEdge ? d : 0.0);\n" +
-        "}\n";
-      pass.edgeDetectionMaterial.needsUpdate = true;
-    } else {
-      console.error("OutlinePass.edgeDetectionMaterial has no hiddenEdgeColor uniform -- unexpected three.js version, hidden-edge occlusion fix skipped. Occluded outline pixels may render fully opaque through occluding geometry.");
-    }
+    // An EARLIER round tried to suppress "hidden" (occluded-by-other-geometry) edges by
+    // forcing their alpha to 0 in edgeDetectionMaterial, based on OutlinePass's own
+    // depth-vs-real-scene comparison (prepareMaskMaterial: a selected fragment's depth
+    // against a depth buffer of everything NOT in this pass's selection). That comparison
+    // turned out to be unreliable for this scene: verified directly (isolated a single,
+    // fully unoccluded button with nothing else in the grid, then forced the depth-test
+    // result to a constant "always visible" and watched the button's own top-rim outline
+    // reappear) that OutlinePass was misclassifying a plainly VISIBLE silhouette edge
+    // (against empty background, not against any real occluder) as "hidden" -- silently
+    // eating real, wanted outline. This is a strong candidate for also explaining "weird
+    // clipping/blending" reported while rotating: a depth-test that's already unreliable at
+    // rest would be expected to flicker between hidden/visible as the viewing angle changes.
+    // Rather than continue chasing the exact numeric cause inside OutlinePass's own
+    // HalfFloat depth-packing (time-costly and still speculative), removed the hidden/visible
+    // distinction entirely: every detected edge now draws at full strength, unconditionally.
+    // This gives up the narrower case the depth-test was meant to catch (an outline drawing
+    // through something ACTUALLY in front of it) in favor of the outline reliably existing at
+    // all -- and given the checkerboard/base-cap-swap scheme already keeps most genuinely
+    // touching neighbors in separate passes (so a "hidden" classification between them was
+    // usually wrong anyway, per this same finding), the trade is a clear net win here.
+    pass.edgeDetectionMaterial.fragmentShader =
+      "varying vec2 vUv;\n" +
+      "uniform sampler2D maskTexture;\n" +
+      "uniform vec2 texSize;\n" +
+      "uniform vec3 visibleEdgeColor;\n" +
+      "uniform vec3 hiddenEdgeColor;\n" +
+      "void main() {\n" +
+      "  vec2 invSize = 1.0 / texSize;\n" +
+      "  vec4 uvOffset = vec4(1.0, 0.0, 0.0, 1.0) * vec4(invSize, invSize);\n" +
+      "  vec4 c1 = texture2D(maskTexture, vUv + uvOffset.xy);\n" +
+      "  vec4 c2 = texture2D(maskTexture, vUv - uvOffset.xy);\n" +
+      "  vec4 c3 = texture2D(maskTexture, vUv + uvOffset.yw);\n" +
+      "  vec4 c4 = texture2D(maskTexture, vUv - uvOffset.yw);\n" +
+      "  float diff1 = (c1.r - c2.r) * 0.5;\n" +
+      "  float diff2 = (c3.r - c4.r) * 0.5;\n" +
+      "  float d = length(vec2(diff1, diff2));\n" +
+      "  gl_FragColor = vec4(visibleEdgeColor, 1.0) * vec4(d);\n" +
+      "}\n";
+    pass.edgeDetectionMaterial.needsUpdate = true;
     composer.addPass(pass);
     return pass;
   }
@@ -915,10 +919,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     groundMat.color.set(settings.groundColor);
 
     // Matches BUTTON_EXTERIOR's own diameter (scaled the same way the cap itself is, via
-    // buttonRadius) rather than an independent radius -- it's meant to visually read as
-    // the exterior shell's own material continuing down to the base, not a narrower rod
-    // peeking out from inside it.
-    var extRadius = settings.buttonRadius * NATURAL_EXTERIOR_RADIUS;
+    // buttonRadius), times extensionRadiusMargin -- a deliberate overhang so the extension's
+    // straight-sided cylinder actually covers the cap's curved (not flat-bottomed) underside
+    // from steep/low camera angles; see extensionRadiusMargin's own DEFAULT_SETTINGS comment
+    // for the measured investigation behind that margin.
+    var extRadius = settings.buttonRadius * NATURAL_EXTERIOR_RADIUS * settings.extensionRadiusMargin;
     var extGeo = new THREE.CylinderGeometry(extRadius, extRadius, 1, 24);
 
     for (var r = 0; r < rows; r++) {
