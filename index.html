@@ -127,7 +127,12 @@
     flex: 1;
     min-height: 0;
   }
-  .dev-group.dragging-item { opacity: 0.4; }
+  /* Was opacity:0.4 -- against this panel's near-black background that read as the dragged
+     row/group nearly vanishing ("becomes dark") rather than as a clear "this is what you're
+     moving" indicator. Full opacity + a light tint + an outline in the panel's own accent
+     color (var(--dev-title-color), so the outline specifically still tracks a user-
+     customized Dev Panel Title Text Color) stays legible instead. */
+  .dev-group.dragging-item { background: rgba(255, 255, 255, 0.08); outline: 1px solid var(--dev-title-color); outline-offset: -1px; }
   .dev-group-header {
     display: flex;
     align-items: center;
@@ -155,7 +160,7 @@
     gap: 6px;
     padding: 4px 0;
   }
-  .dev-row.dragging-item { opacity: 0.4; }
+  .dev-row.dragging-item { background: rgba(255, 255, 255, 0.08); outline: 1px solid var(--dev-title-color); outline-offset: -1px; }
   .dev-row .drag-grip { cursor: grab; opacity: 0.4; font-size: 10px; }
   .dev-row-main { flex: 1; min-width: 0; }
   .dev-setting-label {
