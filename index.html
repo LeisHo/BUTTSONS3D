@@ -181,6 +181,21 @@
     border: 1px solid #444;
     font: inherit;
   }
+  .dev-camera-presets { padding: 6px 0 2px; }
+  .dev-camera-select {
+    width: 100%;
+    min-height: 60px;
+    resize: vertical;
+    overflow-y: auto;
+    background: #000;
+    color: var(--dev-text-color);
+    border: 1px solid #444;
+    font: inherit;
+    font-size: var(--dev-body-font-size);
+    box-sizing: border-box;
+  }
+  .dev-camera-select option { padding: 2px 4px; }
+  .dev-camera-presets .dev-actions { padding: 6px 0 0; border-bottom: none; }
   .dev-color-row input[type="color"] {
     width: 28px;
     height: 22px;
@@ -303,11 +318,21 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     cameraHeight: 40.8,
     cameraDistance: 19.6,
     cameraFov: 20,
+    // Where OrbitControls' orbit target sits -- not a slider (no one tunes this by hand),
+    // just round-tripped so Save/Load and saved camera presets restore a pan offset too,
+    // not just the raw camera position.
+    cameraTargetX: 0,
+    cameraTargetY: 0,
+    cameraTargetZ: 0,
 
     cellShadingEnabled: true,
     toonBands: 8,
     toonShadowFloor: 0,
     toonHighlightCeiling: 100,
+
+    outlineEnabled: true,
+    outlineThickness: 0.04,
+    outlineColor: "#000000",
 
     debugWireframe: false,
 
@@ -323,6 +348,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
     _panelGeometryDesktop: { top: 12, left: 1600, width: 300, height: 560 },
     _panelGeometryMobile: null,
+    _savedCameras: [], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraTargetX/Y/Z }]
     _groupOrder: ["devpanel", "grid", "button", "lighting", "camera", "scene", "shading", "debug"],
     _itemOrderByGroup: {
       devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor"],
@@ -331,7 +357,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
-      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling"],
+      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineThickness", "outlineColor"],
       debug: ["debugWireframe"]
     },
     _collapsedGroups: ["devpanel", "grid", "button", "lighting"]
@@ -380,6 +406,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     { key: "toonBands", label: "Toon Shading Bands", min: 2, max: 8, step: 1, unit: "", integer: true, material: true },
     { key: "toonShadowFloor", label: "Toon Shadow Floor Brightness", min: 0, max: 100, step: 1, unit: "%", material: true },
     { key: "toonHighlightCeiling", label: "Toon Highlight Ceiling Brightness", min: 0, max: 100, step: 1, unit: "%", material: true },
+    { key: "outlineThickness", label: "Outline Thickness", min: 0, max: 0.3, step: 0.005, unit: "(x)", outline: true },
 
     { key: "devTitleFontSize", label: "Dev Panel Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-title-font-size" },
     { key: "devTabFontSize", label: "Desktop/Mobile Tab Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-tab-font-size" },
@@ -392,6 +419,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   var CHECKBOX_CONFIG = [
     { key: "cumulativeRowOffset", label: "Cumulative Row Offset (each row shifts further than the last, instead of alternating)", regen: true },
     { key: "cellShadingEnabled", label: "Cell (Toon) Shading", material: true },
+    { key: "outlineEnabled", label: "Outline", outline: true },
     { key: "debugWireframe", label: "Wireframe", material: true }
   ];
 
@@ -399,6 +427,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     { key: "groundColor", label: "Ground Color", scene: true },
     { key: "baseColor", label: "Base Color", material: true },
     { key: "buttonColor", label: "Button Color", material: true },
+    { key: "outlineColor", label: "Outline Color", outline: true },
     { key: "devBgColor", label: "Dev Panel Background Color", cssVar: "--dev-bg-color" },
     { key: "devTitleColor", label: "Dev Panel Title Text Color", cssVar: "--dev-title-color" },
     { key: "devTextColor", label: "Dev Panel Non-Title Text Color", cssVar: "--dev-text-color" }
@@ -552,6 +581,13 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
   var baseMat = makeMaterial(settings.baseColor);
   var buttonMat = makeMaterial(settings.buttonColor);
+  // Classic cel-shading outline (inverted-hull technique): a flat, always-unlit
+  // BackSide-culled copy of each part, parented AS A CHILD of that exact part with a
+  // uniform local scale slightly over 1 -- since it's a child, it automatically inherits
+  // whatever the parent's own transform is doing (including extMesh's dynamic per-frame
+  // scale.y) with no extra per-frame sync code needed. Independent of cellShadingEnabled
+  // on purpose -- an outline is its own visual layer, not tied to another toggle unasked.
+  var outlineMat = new THREE.MeshBasicMaterial({ color: settings.outlineColor, side: THREE.BackSide });
 
   // The real Rhino-modeled button (data/BUTTON MODEL.fbx) replaces the placeholder
   // cylinders: 4 named parts -- BUTTON_BASE, BUTTON_EXTERIOR (the always-visible outer
@@ -613,6 +649,36 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       c.pressedMesh.material = buttonMat;
       c.extMesh.material = buttonMat;
     });
+  }
+
+  function outlineAxisScale(axes, axis) {
+    return (axes.indexOf(axis) === -1) ? 1 : (1 + settings.outlineThickness);
+  }
+
+  function refreshOutlines() {
+    outlineMat.color.set(settings.outlineColor);
+    cells.forEach(function (c) {
+      c.outlineMeshes.forEach(function (o) {
+        o.mesh.visible = settings.outlineEnabled;
+        o.mesh.scale.set(outlineAxisScale(o.axes, "x"), outlineAxisScale(o.axes, "y"), outlineAxisScale(o.axes, "z"));
+      });
+    });
+  }
+
+  // A child of parentMesh, sharing its geometry, so it automatically inherits whatever
+  // transform parentMesh has (including one that changes every frame, like extMesh).
+  // `axes` (default "xyz") picks which LOCAL axes get puffed out -- the extension
+  // cylinder's own Y scale stretches dynamically every frame to fill the base-to-cap
+  // gap while its radius stays fixed, so puffing its outline's Y too would make the
+  // outline visibly overshoot at both ends; it only gets "xz" so the outline's height
+  // always exactly matches the extension's own live height.
+  function addOutline(cell, parentMesh, axes) {
+    axes = axes || "xyz";
+    var outlineMesh = new THREE.Mesh(parentMesh.geometry, outlineMat);
+    outlineMesh.scale.set(outlineAxisScale(axes, "x"), outlineAxisScale(axes, "y"), outlineAxisScale(axes, "z"));
+    outlineMesh.visible = settings.outlineEnabled;
+    parentMesh.add(outlineMesh);
+    cell.outlineMeshes.push({ mesh: outlineMesh, axes: axes });
   }
 
   var cells = []; // { group, baseMesh, capGroup, exteriorMesh, unpressedMesh, pressedMesh, extMesh, currentGain, pressedAt, pressed, tween }
@@ -697,11 +763,18 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
         var cell = {
           group: group, baseMesh: baseMesh, capGroup: capGroup,
           exteriorMesh: exteriorMesh, unpressedMesh: unpressedMesh, pressedMesh: pressedMesh, extMesh: extMesh,
-          currentGain: 0, pressedAt: 0, pressed: false, tween: null
+          currentGain: 0, pressedAt: 0, pressed: false, tween: null, outlineMeshes: []
         };
         exteriorMesh.userData.cell = cell;
         capGroup.position.y = capRestY(cell);
         updateExtension(cell);
+
+        addOutline(cell, baseMesh);
+        addOutline(cell, exteriorMesh);
+        addOutline(cell, unpressedMesh);
+        addOutline(cell, pressedMesh);
+        addOutline(cell, extMesh, "xz"); // radius only -- its own Y already tracks the live gap exactly
+
         cells.push(cell);
         scene.add(group);
       }
@@ -711,11 +784,122 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   function applyCameraSettings() {
     camera.fov = settings.cameraFov;
     camera.position.set(settings.cameraX, settings.cameraHeight, settings.cameraDistance);
+    controls.target.set(settings.cameraTargetX, settings.cameraTargetY, settings.cameraTargetZ);
     camera.updateProjectionMatrix();
-    // Re-syncs OrbitControls' internal spherical state to this new position (relative to
-    // its target) -- without this it would fight the slider on the very next drag/frame,
+    // Re-syncs OrbitControls' internal spherical state to this new position/target (relative
+    // to each other) -- without this it would fight the slider on the very next drag/frame,
     // snapping back toward wherever it last thought the camera was.
     controls.update();
+  }
+
+  // Pulls the camera's LIVE state (position + wherever OrbitControls' pan has moved its
+  // orbit target) back into settings -- without this, Copy/Save Settings would keep
+  // reporting whatever the sliders were last set to, not wherever the mouse has actually
+  // orbited/panned/zoomed the camera to since. Also refreshes the position sliders' own
+  // displayed value so the panel doesn't show stale numbers right after a sync.
+  function syncCameraSettingsFromLive() {
+    settings.cameraX = camera.position.x;
+    settings.cameraHeight = camera.position.y;
+    settings.cameraDistance = camera.position.z;
+    settings.cameraTargetX = controls.target.x;
+    settings.cameraTargetY = controls.target.y;
+    settings.cameraTargetZ = controls.target.z;
+    ["cameraX", "cameraHeight", "cameraDistance"].forEach(function (key) {
+      var cfg = CONTROL_BY_KEY[key];
+      var slider = document.getElementById("slider-" + key);
+      var valueEl = document.getElementById("value-" + key);
+      if (slider) slider.value = settings[key];
+      if (valueEl && !valueEl.querySelector("input")) valueEl.textContent = formatValue(cfg, settings[key]);
+    });
+  }
+
+  // ---- Saved camera presets (Camera group's own action row, CLAUDE.md 12n point 12:
+  // test/utility buttons live inside the group they exercise) -- a resizable/scrollable
+  // multi-row list of named camera snapshots, independent of the single Save Settings
+  // default. Stored on settings._savedCameras so it persists/copies through the normal
+  // Save/Copy Settings flow, same as everything else. ----
+  var cameraPresetSelect = null;
+
+  function renderCameraPresetOptions() {
+    if (!cameraPresetSelect) return;
+    cameraPresetSelect.innerHTML = "";
+    settings._savedCameras.forEach(function (cam, i) {
+      var opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = cam.name;
+      cameraPresetSelect.appendChild(opt);
+    });
+  }
+
+  function buildCameraPresetsUI() {
+    var wrap = document.createElement("div");
+    wrap.className = "dev-camera-presets";
+
+    cameraPresetSelect = document.createElement("select");
+    cameraPresetSelect.multiple = true;
+    cameraPresetSelect.className = "dev-camera-select";
+    wrap.appendChild(cameraPresetSelect);
+    renderCameraPresetOptions();
+
+    var actions = document.createElement("div");
+    actions.className = "dev-actions";
+
+    var btnSaveCam = document.createElement("button");
+    btnSaveCam.textContent = "Save Camera";
+    btnSaveCam.addEventListener("click", function () {
+      syncCameraSettingsFromLive();
+      var defaultName = "Camera " + (settings._savedCameras.length + 1);
+      var name = prompt("Name this camera:", defaultName);
+      if (name === null) return;
+      name = name.trim() || defaultName;
+      settings._savedCameras.push({
+        name: name,
+        cameraX: settings.cameraX, cameraHeight: settings.cameraHeight, cameraDistance: settings.cameraDistance,
+        cameraFov: settings.cameraFov,
+        cameraTargetX: settings.cameraTargetX, cameraTargetY: settings.cameraTargetY, cameraTargetZ: settings.cameraTargetZ
+      });
+      renderCameraPresetOptions();
+    });
+    actions.appendChild(btnSaveCam);
+
+    var btnUseCam = document.createElement("button");
+    btnUseCam.textContent = "Use Camera";
+    btnUseCam.addEventListener("click", function () {
+      var opt = cameraPresetSelect.selectedOptions[0];
+      if (!opt) return;
+      var cam = settings._savedCameras[parseInt(opt.value, 10)];
+      if (!cam) return;
+      settings.cameraX = cam.cameraX;
+      settings.cameraHeight = cam.cameraHeight;
+      settings.cameraDistance = cam.cameraDistance;
+      settings.cameraFov = cam.cameraFov;
+      settings.cameraTargetX = cam.cameraTargetX;
+      settings.cameraTargetY = cam.cameraTargetY;
+      settings.cameraTargetZ = cam.cameraTargetZ;
+      ["cameraX", "cameraHeight", "cameraDistance", "cameraFov"].forEach(function (key) {
+        var cfg = CONTROL_BY_KEY[key];
+        var slider = document.getElementById("slider-" + key);
+        var valueEl = document.getElementById("value-" + key);
+        if (slider) slider.value = settings[key];
+        if (valueEl && !valueEl.querySelector("input")) valueEl.textContent = formatValue(cfg, settings[key]);
+      });
+      applyCameraSettings();
+    });
+    actions.appendChild(btnUseCam);
+
+    var btnDeleteCam = document.createElement("button");
+    btnDeleteCam.textContent = "Delete Camera";
+    btnDeleteCam.addEventListener("click", function () {
+      var selected = Array.prototype.map.call(cameraPresetSelect.selectedOptions, function (o) { return parseInt(o.value, 10); });
+      if (!selected.length) return;
+      selected.sort(function (a, b) { return b - a; }); // delete from the end first so earlier indices stay valid
+      selected.forEach(function (i) { settings._savedCameras.splice(i, 1); });
+      renderCameraPresetOptions();
+    });
+    actions.appendChild(btnDeleteCam);
+
+    wrap.appendChild(actions);
+    return wrap;
   }
 
   // ---- Interaction: press = compress down instantly, swap to the modeled PRESSED
@@ -859,6 +1043,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     if (cfg.camera) applyCameraSettings();
     if (cfg.light) applyLightSettings();
     if (cfg.material) refreshMaterials();
+    if (cfg.outline) refreshOutlines();
     if (cfg.scene) { groundMat.color.set(settings.groundColor); }
     if (cfg.regen && !opts.skipRegen) regenerateGrid();
   }
@@ -931,6 +1116,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
       checkbox.addEventListener("change", function () {
         settings[cfg.key] = checkbox.checked;
         if (cfg.material) refreshMaterials();
+        if (cfg.outline) refreshOutlines();
         if (cfg.regen) regenerateGrid();
       });
       label.appendChild(checkbox);
@@ -953,6 +1139,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
         settings[cfg.key] = colorInput.value;
         applyCssVar(cfg, colorInput.value);
         if (cfg.material) refreshMaterials();
+        if (cfg.outline) refreshOutlines();
         if (cfg.scene) groundMat.color.set(settings.groundColor);
       });
       main.appendChild(colorLabel);
@@ -1035,6 +1222,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
         var cfg = CONTROL_BY_KEY[key];
         if (cfg) body.appendChild(renderControl(cfg));
       });
+      if (groupId === "camera") body.appendChild(buildCameraPresetsUI());
       groupEl.appendChild(body);
       groupsHost.appendChild(groupEl);
     });
@@ -1207,6 +1395,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
   document.getElementById("btnCopy").addEventListener("click", function () {
     var btn = this;
+    syncCameraSettingsFromLive();
     var json = JSON.stringify(settings, null, 2);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(json).then(function () { flashButton(btn, "Copied!"); }, function () { fallbackCopy(json, btn); });
@@ -1229,6 +1418,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   document.getElementById("btnSave").addEventListener("click", function () {
     var btn = this;
     savePanelGeometry();
+    syncCameraSettingsFromLive();
     try {
       var toSave = Object.assign({}, settings, { _schemaVersion: SETTINGS_SCHEMA_VERSION });
       localStorage.setItem(LOCAL_KEY, JSON.stringify(toSave));
