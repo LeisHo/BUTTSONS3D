@@ -323,10 +323,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     lightAngleY: -35,
     lightAngleZ: -77,
 
-    cameraX: 37.3,
-    cameraHeight: 40.8,
-    cameraDistance: 19.6,
-    cameraFov: 20,
+    cameraX: 70.98324539302237,
+    cameraHeight: 56.636594558232616,
+    cameraDistance: 59.45795162691759,
+    cameraFov: 10,
     // Yaw/Pitch/Zoom, ported from OKCILCOKCID's camera architecture: DERIVED from
     // camera.position/controls.target (no independent state to restore), so they're NOT
     // replayed on boot/Reset/preset-restore (see applyAllSettings()'s skipCameraApply) --
@@ -336,9 +336,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // regardless (see syncCameraSettingsFromLive(), called from animate()). Zoom (distance-
     // to-target) IS replayed normally like any other camera value; its default below is the
     // exact distance from the cameraX/Height/Distance position above to the origin target.
-    cameraYaw: 0,
-    cameraPitch: 0,
-    cameraZoom: 58.652,
+    cameraYaw: -129.95067282459314,
+    cameraPitch: -31.45237707681217,
+    cameraZoom: 108.54295454495666,
 
     cellShadingEnabled: true,
     toonBands: 8,
@@ -346,9 +346,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     toonHighlightCeiling: 100,
 
     outlineEnabled: true,
-    outlineThickness: 0.04,
-    outlineColor: "#000000",
-    outlineUsePostprocessing: false,
+    outlineThickness: 0.215,
+    outlineColor: "#ff7070",
+    outlineUsePostprocessing: true,
+    // Separate from outlineThickness above -- that one puffs the geometry (inverted-hull)
+    // outline meshes outward in local space (a scale factor), which has no meaning for the
+    // screen-space pass; this maps directly to OutlinePass's own edgeThickness (screen-space
+    // pixels, via its internal blur kernel radius), an entirely different unit/mechanism.
+    outlinePassThickness: 1.5,
 
     debugWireframe: false,
     debugHideBase: false,
@@ -365,9 +370,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     devTitleColor: "#9fd3ff",
     devTextColor: "#e6e6e6",
 
-    _panelGeometryDesktop: { top: 12, left: 1600, width: 300, height: 560 },
+    _panelGeometryDesktop: { top: 12, left: 1236, width: 300, height: 560 },
     _panelGeometryMobile: null,
-    _savedCameras: [], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraZoom }] -- position+FOV+zoom only, no yaw/pitch/target (matches OKCILCOKCID: those are derived, not part of a preset's stored identity)
+    _savedCameras: [
+      { name: "Camera 1", cameraX: 70.98324539302234, cameraHeight: 56.63659455823262, cameraDistance: 59.45795162691757, cameraFov: 10, cameraZoom: 108.54295454495664 }
+    ], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraZoom }] -- position+FOV+zoom only, no yaw/pitch/target (matches OKCILCOKCID: those are derived, not part of a preset's stored identity)
     _groupOrder: ["devpanel", "grid", "button", "lighting", "camera", "scene", "shading", "debug"],
     _itemOrderByGroup: {
       devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor"],
@@ -376,10 +383,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
-      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor"],
+      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlinePassThickness", "outlineColor"],
       debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior"]
     },
-    _collapsedGroups: ["devpanel", "grid", "button", "lighting"]
+    _collapsedGroups: ["devpanel", "grid", "button", "lighting", "camera", "scene"]
   };
 
   var GROUP_DEFS = [
@@ -434,7 +441,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "toonBands", label: "Toon Shading Bands", min: 2, max: 8, step: 1, unit: "", integer: true, material: true },
     { key: "toonShadowFloor", label: "Toon Shadow Floor Brightness", min: 0, max: 100, step: 1, unit: "%", material: true },
     { key: "toonHighlightCeiling", label: "Toon Highlight Ceiling Brightness", min: 0, max: 100, step: 1, unit: "%", material: true },
-    { key: "outlineThickness", label: "Outline Thickness", min: 0, max: 0.3, step: 0.005, unit: "(x)", outline: true },
+    { key: "outlineThickness", label: "Outline Thickness (Geometry)", min: 0, max: 0.3, step: 0.005, unit: "(x)", outline: true },
+    { key: "outlinePassThickness", label: "Outline Thickness (Screen-Space Pass)", min: 0, max: 4, step: 0.05, unit: "(Px)", outline: true },
 
     { key: "devTitleFontSize", label: "Dev Panel Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-title-font-size" },
     { key: "devTabFontSize", label: "Desktop/Mobile Tab Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-tab-font-size" },
@@ -587,7 +595,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     var pass = new OutlinePass(new THREE.Vector2(window.innerWidth || 1, window.innerHeight || 1), scene, camera);
     pass.edgeStrength = 5;
     pass.edgeGlow = 0;
-    pass.edgeThickness = 1.5;
+    pass.edgeThickness = settings.outlinePassThickness; // kept in sync by refreshOutlines()
     pass.hiddenEdgeColor.set(0x000000);
     // OutlinePass composites its edge color with THREE.AdditiveBlending by default, which
     // makes a black outlineColor (this project's default -- CLAUDE.md matches the geometry
@@ -808,6 +816,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     ALL_OUTLINE_PASSES.forEach(function (pass) {
       pass.enabled = usePass;
       pass.visibleEdgeColor.set(settings.outlineColor);
+      pass.edgeThickness = settings.outlinePassThickness;
     });
   }
 
