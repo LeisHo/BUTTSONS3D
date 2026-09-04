@@ -353,6 +353,37 @@ Verified:
   connected wavy lines) and the console stays clean on 2 fresh tabs.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 08:44 AM - 08:52 AM EDT
+
+User: "button should have its own outline and so should the base" --
+the previous round's 2-pass lag fix merged a cell's base and cap into
+one shared selection per checkerboard color, which fixed cross-button
+merging but gave up the button's own base-to-cap seam guarantee.
+
+Fixed:
+- Kept the pass count at 2 (no lag regression) but changed the
+  object-to-pass assignment: a cell's base and its own cap now always
+  land in opposite passes, flipping which pass is which by checkerboard
+  color. This guarantees BOTH: a cell's own base-to-cap seam always
+  renders, AND two orthogonally-adjacent cells' same-type meshes stay
+  in different passes (cross-button merging stays fixed). The one
+  remaining gap: a cell's base and its neighbor's cap can share a pass
+  -- accepted as rarer than same-type neighbor touches at normal
+  spacing, same spirit as the already-accepted diagonal-touch case.
+
+Verified:
+- Close-up screenshot confirms a clear seam between the button (cap)
+  and base; wider-zoom screenshot confirms cross-button separation
+  still holds.
+- Re-measured composer.render() and got two inflated readings (109ms,
+  203ms) along the way -- diagnosed as a measurement artifact from too
+  many concurrent browser tabs holding WebGL contexts (the harness
+  auto-opens a file:// preview tab on every edit, and this session had
+  accumulated 9 open tabs), not a real regression -- confirmed by
+  closing the stale tabs and re-measuring clean at 18.3ms, matching the
+  prior round's ~20ms result.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
