@@ -340,6 +340,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     outlineUsePostprocessing: false,
 
     debugWireframe: false,
+    debugHideBase: false,
+    debugHideExterior: false,
+    debugHideInterior: false,
 
     devTitleFontSize: 13,
     devTabFontSize: 11.5,
@@ -363,7 +366,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
       shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor"],
-      debug: ["debugWireframe"]
+      debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior"]
     },
     _collapsedGroups: ["devpanel", "grid", "button", "lighting"]
   };
@@ -426,7 +429,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "cellShadingEnabled", label: "Cell (Toon) Shading", material: true },
     { key: "outlineEnabled", label: "Outline", outline: true },
     { key: "outlineUsePostprocessing", label: "Outline: Use Screen-Space Pass (vs. Geometry)", outline: true },
-    { key: "debugWireframe", label: "Wireframe", material: true }
+    { key: "debugWireframe", label: "Wireframe", material: true },
+    { key: "debugHideBase", label: "Hide Base Model", visibility: true },
+    { key: "debugHideExterior", label: "Hide Button Exterior Model", visibility: true },
+    { key: "debugHideInterior", label: "Hide Button Interior Model", visibility: true }
   ];
 
   var COLOR_CONFIG = [
@@ -798,7 +804,6 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         capGroup.add(unpressedMesh);
 
         var pressedMesh = new THREE.Mesh(modelGeo.pressed, buttonMat);
-        pressedMesh.visible = false;
         capGroup.add(pressedMesh);
 
         var cell = {
@@ -806,6 +811,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
           exteriorMesh: exteriorMesh, unpressedMesh: unpressedMesh, pressedMesh: pressedMesh, extMesh: extMesh,
           currentGain: 0, pressedAt: 0, pressed: false, tween: null, outlineMeshes: []
         };
+        baseMesh.visible = !settings.debugHideBase;
+        exteriorMesh.visible = !settings.debugHideExterior;
+        updateInteriorVisibility(cell);
         exteriorMesh.userData.cell = cell;
         capGroup.position.y = capRestY(cell);
         updateExtension(cell);
@@ -959,12 +967,29 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     cell.tween = { fromY: cell.capGroup.position.y, toY: targetY, start: performance.now(), duration: Math.max(1, durationMs) };
   }
 
+  // The unpressed/pressed interior meshes swap visibility every press/release, independent
+  // of the "Hide Button Interior Model" debug checkbox -- routing every place that sets
+  // their visibility through this one helper keeps the debug hide flag from getting
+  // silently overwritten the next time the button is clicked.
+  function updateInteriorVisibility(cell) {
+    var shown = !settings.debugHideInterior;
+    cell.unpressedMesh.visible = shown && !cell.pressed;
+    cell.pressedMesh.visible = shown && cell.pressed;
+  }
+
+  function refreshDebugVisibility() {
+    cells.forEach(function (c) {
+      c.baseMesh.visible = !settings.debugHideBase;
+      c.exteriorMesh.visible = !settings.debugHideExterior;
+      updateInteriorVisibility(c);
+    });
+  }
+
   function pressCell(cell) {
     if (cell.pressed) return;
     cell.pressed = true;
     cell.pressedAt = performance.now();
-    cell.unpressedMesh.visible = false;
-    cell.pressedMesh.visible = true;
+    updateInteriorVisibility(cell);
     tweenTo(cell, capRestY(cell) - settings.clickIntensity, 0);
   }
 
@@ -976,8 +1001,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     cell.currentGain = wasHeld
       ? Math.max(0, cell.currentGain - settings.heightGainPerClick)
       : cell.currentGain + settings.heightGainPerClick;
-    cell.unpressedMesh.visible = true;
-    cell.pressedMesh.visible = false;
+    updateInteriorVisibility(cell);
     tweenTo(cell, capRestY(cell), settings.releaseMs);
   }
 
@@ -1004,8 +1028,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   function cancelPressCell(cell) {
     if (!cell.pressed) return;
     cell.pressed = false;
-    cell.unpressedMesh.visible = true;
-    cell.pressedMesh.visible = false;
+    updateInteriorVisibility(cell);
     tweenTo(cell, capRestY(cell), settings.releaseMs);
   }
 
@@ -1125,6 +1148,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     applyLightSettings();
     refreshMaterials();
     regenerateGrid();
+    refreshDebugVisibility();
   }
 
   function makeValueEditable(cfg, valueEl) {
@@ -1179,6 +1203,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         settings[cfg.key] = checkbox.checked;
         if (cfg.material) refreshMaterials();
         if (cfg.outline) refreshOutlines();
+        if (cfg.visibility) refreshDebugVisibility();
         if (cfg.regen) regenerateGrid();
       });
       label.appendChild(checkbox);
