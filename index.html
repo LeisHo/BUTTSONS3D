@@ -322,12 +322,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     cameraHeight: 40.8,
     cameraDistance: 19.6,
     cameraFov: 20,
-    // Where OrbitControls' orbit target sits -- not a slider (no one tunes this by hand),
-    // just round-tripped so Save/Load and saved camera presets restore a pan offset too,
-    // not just the raw camera position.
-    cameraTargetX: 0,
-    cameraTargetY: 0,
-    cameraTargetZ: 0,
+    // Yaw/Pitch/Zoom, ported from OKCILCOKCID's camera architecture: DERIVED from
+    // camera.position/controls.target (no independent state to restore), so they're NOT
+    // replayed on boot/Reset/preset-restore (see applyAllSettings()'s skipCameraApply) --
+    // force-overwriting them from a stored default would snap the real look direction to
+    // whatever that default happens to mean, rather than leaving it alone. Kept here only so
+    // Copy/Save Settings capture a live readout; their real values are refreshed every frame
+    // regardless (see syncCameraSettingsFromLive(), called from animate()). Zoom (distance-
+    // to-target) IS replayed normally like any other camera value; its default below is the
+    // exact distance from the cameraX/Height/Distance position above to the origin target.
+    cameraYaw: 0,
+    cameraPitch: 0,
+    cameraZoom: 58.652,
 
     cellShadingEnabled: true,
     toonBands: 8,
@@ -356,14 +362,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
     _panelGeometryDesktop: { top: 12, left: 1600, width: 300, height: 560 },
     _panelGeometryMobile: null,
-    _savedCameras: [], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraTargetX/Y/Z }]
+    _savedCameras: [], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraZoom }] -- position+FOV+zoom only, no yaw/pitch/target (matches OKCILCOKCID: those are derived, not part of a preset's stored identity)
     _groupOrder: ["devpanel", "grid", "button", "lighting", "camera", "scene", "shading", "debug"],
     _itemOrderByGroup: {
       devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor"],
       grid: ["colCount", "rowCount", "colSpacing", "rowSpacing", "rowXOffset", "cumulativeRowOffset"],
       button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
-      camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov"],
+      camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
       shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor"],
       debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior"]
@@ -410,6 +416,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "cameraHeight", label: "Camera Y Position", min: -100, max: 100, step: 0.1, unit: "(x)", camera: true },
     { key: "cameraDistance", label: "Camera Z Position", min: -150, max: 150, step: 0.1, unit: "(x)", camera: true },
     { key: "cameraFov", label: "Camera FOV", min: 20, max: 100, step: 1, unit: "(Deg)", camera: true },
+    // Yaw/Pitch: ported from OKCILCOKCID -- a genuinely separate control from the X/Y/Z
+    // position sliders above, which now translate position+target together (see
+    // applyCameraControl()). These rotate controls.target around the CURRENT position at a
+    // fixed distance instead -- a true "turn in place" independent of position and zoom.
+    // replayOnLoad:false: derived state, must not be force-applied from a stored default
+    // at boot/Reset/preset-restore (see applyAllSettings()).
+    { key: "cameraYaw", label: "Camera Yaw", min: -180, max: 180, step: 1, unit: "(Deg)", camera: true, replayOnLoad: false },
+    { key: "cameraPitch", label: "Camera Pitch", min: -89, max: 89, step: 1, unit: "(Deg)", camera: true, replayOnLoad: false },
+    { key: "cameraZoom", label: "Camera Zoom (Dist)", min: 1, max: 300, step: 0.1, unit: "(x)", camera: true },
 
     { key: "toonBands", label: "Toon Shading Bands", min: 2, max: 8, step: 1, unit: "", integer: true, material: true },
     { key: "toonShadowFloor", label: "Toon Shadow Floor Brightness", min: 0, max: 100, step: 1, unit: "%", material: true },
@@ -461,8 +476,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // scene with no error -- reported as "camera very far away, no buttons in sight, lighting
   // does nothing" (that last part being a downstream symptom: nothing lit was ever on
   // screen). A mismatched version discards the old save entirely rather than merging
-  // semantically incompatible values.
-  var SETTINGS_SCHEMA_VERSION = 2;
+  // semantically incompatible values. Bumped to 3 for the OKCILCOKCID camera-architecture
+  // port: cameraTargetX/Y/Z (raw target coordinates) were removed in favor of derived
+  // cameraYaw/cameraPitch/cameraZoom -- an old save's cameraTargetX/Y/Z would otherwise be
+  // silently ignored (harmless) but its ABSENCE of cameraZoom would leave that key
+  // undefined, and cameraX/Height/Distance under the old save may reflect a since-changed
+  // "independent position, independent target" meaning rather than the new "position
+  // translates target together" one.
+  var SETTINGS_SCHEMA_VERSION = 3;
   function loadSavedDefaults() {
     try {
       var raw = localStorage.getItem(LOCAL_KEY);
@@ -517,12 +538,21 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   scene.background = new THREE.Color(0x14151a);
 
   var camera = new THREE.PerspectiveCamera(settings.cameraFov, window.innerWidth / window.innerHeight, 0.1, 500);
+  // Pre-positioned to exactly match the default cameraX/Height/Distance settings below,
+  // ported from OKCILCOKCID's own construction (camera.position.set(0,0.5,9), matching that
+  // project's own position-slider defaults exactly): applyCameraControl()'s position sliders
+  // translate camera.position AND controls.target together by the delta from the camera's
+  // CURRENT position, so if the camera started at THREE's own (0,0,0) default instead, the
+  // very first settings replay at boot would compute a huge spurious delta and drag
+  // controls.target to be coincident with camera.position -- a real degenerate "looking at
+  // nothing, zero direction" camera. Starting here already at the right spot makes that
+  // first replay's delta genuinely zero, exactly like OKCILCOKCID's own boot sequence.
+  camera.position.set(settings.cameraX, settings.cameraHeight, settings.cameraDistance);
 
   // Mouse orbit/pan/zoom (replaces the old Camera Rotation X/Y/Z sliders entirely --
   // OrbitControls owns the camera's orientation from here on, updating camera.position/
   // .quaternion itself every frame based on drag/wheel input; the X/Y/Z Position sliders
-  // still work, but as a "jump to this position" default/reset rather than the only way to
-  // move the camera -- see applyCameraSettings()'s controls.update() call after each set).
+  // still work too, translating position+target together -- see applyCameraControl()).
   var controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0, 0);
   controls.enableDamping = true;
@@ -837,33 +867,80 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     refreshOutlines(); // re-applies enabled/color to the passes now that selectedObjects exist
   }
 
-  function applyCameraSettings() {
-    camera.fov = settings.cameraFov;
-    camera.position.set(settings.cameraX, settings.cameraHeight, settings.cameraDistance);
-    controls.target.set(settings.cameraTargetX, settings.cameraTargetY, settings.cameraTargetZ);
+  // Yaw/pitch describe the LOOK DIRECTION from camera.position to controls.target -- derived
+  // from that vector (not stored separately), so mouse-driven changes (OrbitControls' own
+  // right-drag orbits POSITION around a fixed target, which changes this same direction
+  // vector just as much as moving target would) show up correctly via the live sync below.
+  // Ported from OKCILCOKCID -- see that project's own CAMERA group comment for the full
+  // "position sliders translate, yaw/pitch rotate" rationale.
+  function getCameraYawPitch() {
+    var dir = controls.target.clone().sub(camera.position);
+    var dist = dir.length() || 1;
+    dir.normalize();
+    var pitch = Math.asin(Math.max(-1, Math.min(1, dir.y))) * 180 / Math.PI;
+    var yaw = Math.atan2(dir.x, dir.z) * 180 / Math.PI;
+    return { yaw: yaw, pitch: pitch, dist: dist };
+  }
+
+  // Moves controls.target (NOT camera.position) to a point at the CURRENT distance-to-target
+  // along the new yaw/pitch -- a genuine "turn in place" rotation, independent of the position
+  // sliders (which move position+target together) and of Zoom (distance preserved exactly).
+  function setCameraYawPitch(yawDeg, pitchDeg) {
+    var dist = getCameraYawPitch().dist;
+    var yaw = yawDeg * Math.PI / 180, pitch = pitchDeg * Math.PI / 180;
+    var dir = new THREE.Vector3(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw));
+    controls.target.copy(camera.position).addScaledVector(dir, dist);
+  }
+
+  // Moves the camera to an exact distance from controls.target along its CURRENT direction
+  // from that target -- changes zoom without changing which way the camera is looking.
+  function setCameraDistance(dist) {
+    var dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-8) { camera.getWorldDirection(dir); dir.multiplyScalar(-1); }
+    camera.position.copy(controls.target).addScaledVector(dir.normalize(), Math.max(0.01, dist));
+  }
+
+  // Per-slider camera apply, ported from OKCILCOKCID's per-control onSet handlers -- called
+  // by applySetting() whenever a camera-flagged slider changes via direct user input (the
+  // wholesale boot/regen/preset-restore path above stays a simple absolute set instead).
+  function applyCameraControl(key, value) {
+    if (key === "cameraX" || key === "cameraHeight" || key === "cameraDistance") {
+      var axis = key === "cameraX" ? "x" : key === "cameraHeight" ? "y" : "z";
+      var delta = value - camera.position[axis];
+      camera.position[axis] = value;
+      controls.target[axis] += delta;
+    } else if (key === "cameraYaw") {
+      setCameraYawPitch(value, getCameraYawPitch().pitch);
+    } else if (key === "cameraPitch") {
+      setCameraYawPitch(getCameraYawPitch().yaw, value);
+    } else if (key === "cameraFov") {
+      camera.fov = value;
+    } else if (key === "cameraZoom") {
+      setCameraDistance(value);
+    }
     camera.updateProjectionMatrix();
-    // Re-syncs OrbitControls' internal spherical state to this new position/target (relative
-    // to each other) -- without this it would fight the slider on the very next drag/frame,
-    // snapping back toward wherever it last thought the camera was.
     controls.update();
   }
 
-  // Pulls the camera's LIVE state (position + wherever OrbitControls' pan has moved its
-  // orbit target) back into settings -- without this, Copy/Save Settings would keep
-  // reporting whatever the sliders were last set to, not wherever the mouse has actually
-  // orbited/panned/zoomed the camera to since. Also refreshes the position sliders' own
-  // displayed value so the panel doesn't show stale numbers right after a sync.
+  // Refreshes the CAMERA group's slider values (and settings) from the actual live camera
+  // state -- called every frame (see animate()) so panning/right-drag-rotate/scroll-zoom all
+  // show up here automatically, not just after Copy/Save Settings is clicked. Skips whichever
+  // row currently has focus, so this doesn't fight a user mid-drag/mid-type on that control.
+  var CAMERA_LIVE_KEYS = ["cameraX", "cameraHeight", "cameraDistance", "cameraYaw", "cameraPitch", "cameraFov", "cameraZoom"];
   function syncCameraSettingsFromLive() {
     settings.cameraX = camera.position.x;
     settings.cameraHeight = camera.position.y;
     settings.cameraDistance = camera.position.z;
-    settings.cameraTargetX = controls.target.x;
-    settings.cameraTargetY = controls.target.y;
-    settings.cameraTargetZ = controls.target.z;
-    ["cameraX", "cameraHeight", "cameraDistance"].forEach(function (key) {
-      var cfg = CONTROL_BY_KEY[key];
+    var yp = getCameraYawPitch();
+    settings.cameraYaw = yp.yaw;
+    settings.cameraPitch = yp.pitch;
+    settings.cameraFov = camera.fov;
+    settings.cameraZoom = camera.position.distanceTo(controls.target);
+    CAMERA_LIVE_KEYS.forEach(function (key) {
       var slider = document.getElementById("slider-" + key);
       var valueEl = document.getElementById("value-" + key);
+      if (document.activeElement === slider || (valueEl && valueEl.contains(document.activeElement))) return;
+      var cfg = CONTROL_BY_KEY[key];
       if (slider) slider.value = settings[key];
       if (valueEl && !valueEl.querySelector("input")) valueEl.textContent = formatValue(cfg, settings[key]);
     });
@@ -911,8 +988,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       settings._savedCameras.push({
         name: name,
         cameraX: settings.cameraX, cameraHeight: settings.cameraHeight, cameraDistance: settings.cameraDistance,
-        cameraFov: settings.cameraFov,
-        cameraTargetX: settings.cameraTargetX, cameraTargetY: settings.cameraTargetY, cameraTargetZ: settings.cameraTargetZ
+        cameraFov: settings.cameraFov, cameraZoom: settings.cameraZoom
       });
       renderCameraPresetOptions();
     });
@@ -925,21 +1001,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       if (!opt) return;
       var cam = settings._savedCameras[parseInt(opt.value, 10)];
       if (!cam) return;
-      settings.cameraX = cam.cameraX;
-      settings.cameraHeight = cam.cameraHeight;
-      settings.cameraDistance = cam.cameraDistance;
-      settings.cameraFov = cam.cameraFov;
-      settings.cameraTargetX = cam.cameraTargetX;
-      settings.cameraTargetY = cam.cameraTargetY;
-      settings.cameraTargetZ = cam.cameraTargetZ;
-      ["cameraX", "cameraHeight", "cameraDistance", "cameraFov"].forEach(function (key) {
-        var cfg = CONTROL_BY_KEY[key];
-        var slider = document.getElementById("slider-" + key);
-        var valueEl = document.getElementById("value-" + key);
-        if (slider) slider.value = settings[key];
-        if (valueEl && !valueEl.querySelector("input")) valueEl.textContent = formatValue(cfg, settings[key]);
-      });
-      applyCameraSettings();
+      // Position + FOV only, no target/yaw/pitch touched -- matches OKCILCOKCID's
+      // useCameraPreset() exactly (see DEFAULT_SETTINGS._savedCameras' own comment for why
+      // target isn't part of a preset's stored identity). camera.position.set() here is a
+      // direct absolute jump, not a translate -- unlike the position SLIDERS, a preset is a
+      // literal "go here," not "move by this much."
+      camera.position.set(cam.cameraX, cam.cameraHeight, cam.cameraDistance);
+      camera.fov = cam.cameraFov;
+      camera.updateProjectionMatrix();
+      syncCameraSettingsFromLive();
     });
     actions.appendChild(btnUseCam);
 
@@ -1101,6 +1171,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       updateExtension(c);
     });
     controls.update(); // required every frame while damping is enabled
+    syncCameraSettingsFromLive();
     if (settings.outlineEnabled && settings.outlineUsePostprocessing) {
       composer.render();
     } else {
@@ -1125,7 +1196,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     if (valueEl && !valueEl.querySelector("input")) valueEl.textContent = formatValue(cfg, value);
 
     applyCssVar(cfg, value);
-    if (cfg.camera) applyCameraSettings();
+    if (cfg.camera && !opts.skipCameraApply) applyCameraControl(cfg.key, value);
     if (cfg.light) applyLightSettings();
     if (cfg.material) refreshMaterials();
     if (cfg.outline) refreshOutlines();
@@ -1134,7 +1205,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   }
 
   function applyAllSettings() {
-    SLIDER_CONFIG.forEach(function (cfg) { applySetting(cfg, settings[cfg.key], { skipRegen: true }); });
+    // skipCameraApply for replayOnLoad:false controls (cameraYaw/cameraPitch): those are
+    // DERIVED state, not independent truth -- replaying a stored/default value here would
+    // force-overwrite the real look direction. Every other camera key (position/FOV/zoom)
+    // DOES get replayed here via its own applyCameraControl() logic -- deliberately NOT
+    // followed by a second wholesale re-apply: an earlier version of this function called
+    // applyCameraSettings() again afterward "just to be safe," which silently clobbered
+    // cameraZoom's own already-correct replay (setCameraDistance() moves position to match
+    // controls.target, then the wholesale call overwrote position back to an absolute value
+    // without correspondingly fixing target, undoing the zoom fix) -- caught via direct
+    // live camera/target inspection (window.__debug), not assumed from reading the code.
+    SLIDER_CONFIG.forEach(function (cfg) {
+      applySetting(cfg, settings[cfg.key], { skipRegen: true, skipCameraApply: cfg.camera && cfg.replayOnLoad === false });
+    });
     CHECKBOX_CONFIG.forEach(function (cfg) {
       var input = document.getElementById("check-" + cfg.key);
       if (input) input.checked = settings[cfg.key];
@@ -1144,7 +1227,6 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       var input = document.getElementById("color-" + cfg.key);
       if (input) input.value = settings[cfg.key];
     });
-    applyCameraSettings();
     applyLightSettings();
     refreshMaterials();
     regenerateGrid();
