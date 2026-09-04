@@ -384,6 +384,53 @@ Verified:
   prior round's ~20ms result.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 09:15 AM - 09:48 AM EDT
+
+User reported 3 issues in one message: (1) "the extension cylinder
+should reach all the way to the base bottom, i should not be able to
+see under the button," (2) "base button outline looks ok. but buttn
+outline doesnt seem to be there," (3) "wen i rotate and the outliens
+overlap, theres aw eird clipping blending thin."
+
+Fixed:
+- Root-caused #2 via direct live investigation, not guessing: isolated
+  a single fully unoccluded button (1x1 grid), forced the OutlinePass
+  depth-test result to a constant "always visible," and watched the
+  cap's own top-rim outline reappear -- confirming the prior round's
+  occlusion-hiding fix was misclassifying a plainly visible silhouette
+  edge (against empty background, no real occluder) as "hidden,"
+  silently suppressing real, wanted outline. Removed the hidden/visible
+  distinction entirely from edgeDetectionMaterial -- every detected edge
+  now draws at full strength unconditionally.
+- #3 not independently root-caused, but the same depth-test
+  unreliability is a strong candidate (a test already wrong at rest
+  would be expected to flicker with viewing angle) -- fixed by the same
+  change; rotation-tested through several angles afterward with no
+  artifact observed.
+- Investigated #1 by walking the actual BUTTON_EXTERIOR mesh geometry
+  (not assumed): confirmed the gap-fill extension's radius already
+  exactly matched the exterior's own measured bottom-rim radius (both
+  1.5 units). The gap was real anyway -- the exterior's underside curves
+  inward above the rim rather than being flat, so a shallow/steep camera
+  angle grazes that curve before reaching the true bottom-rim radius,
+  making the cap's apparent silhouette narrower than its measured radius
+  at exactly that angle. Added a new "Extension Radius Margin" slider
+  (extensionRadiusMargin, default 1.5x) as a deliberate overhang on top
+  of the already-correct match -- empirically tested 1.3x (still a
+  visible sliver) and 1.6x (fully closed at a deliberately steep test
+  angle), landed on 1.5x as the default, cross-checked at buttonHeight=1
+  (unsquashed) to confirm it doesn't visibly overshoot there either.
+
+Verified:
+- All 3 fixes re-tested together on a genuinely fresh tab/reload at the
+  project's actual current default settings -- clean console, gap
+  closed, per-button outline present, multiple rotation angles tested
+  with no clipping artifact, geometry (non-postprocessing) outline mode
+  also re-checked (unaffected by the shader change, confirmed the wider
+  extension radius doesn't regress it), and a real click still functions
+  with no console errors.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
