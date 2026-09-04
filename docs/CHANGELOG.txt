@@ -155,6 +155,44 @@ Verified:
   from rapid reloads, no new script errors).
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 05:03 AM - 05:10 AM EDT
+
+Fixed OutlinePass drawing occluded outlines through foreground buttons,
+reported directly with a screenshot: "outlines seem to render fully on
+top of everything... The outline of a button being obscured by another
+button in front, should not have its entire outline shown. only for
+areas where the button is visible."
+
+Fixed:
+- OutlinePass's own edgeDetectionMaterial gives a "hidden" (occluded)
+  edge pixel the same alpha as a genuinely visible one -- they only
+  differ by color (hiddenEdgeColor vs visibleEdgeColor). Under the
+  AdditiveBlending this pass used before an earlier fix, that was
+  harmless as long as hiddenEdgeColor was black (adding zero draws
+  nothing) -- which is exactly why a black VISIBLE edge was ALSO
+  invisible, the bug the earlier NormalBlending fix addressed. But
+  NormalBlending has no such free cancellation, so occluded edges
+  started drawing just as opaquely as visible ones. Patched
+  edgeDetectionMaterial's fragment shader (inspected live, not guessed)
+  so a hidden edge's alpha is forced to 0 -- contributes nothing under
+  any blending mode, true depth-respecting occlusion. Applied via
+  runtime string-replace against the exact pinned three@0.169.0 shader
+  source, with a console.error guard if the match ever fails on a
+  future version bump.
+
+Verified:
+- Live in the Browser pane: screenshotted before/after with the
+  screen-space outline enabled -- before, outlines traced full circles
+  around every button top and cut through occluding neighbors in
+  criss-cross patterns; after, outlines only trace the actual visible
+  silhouette, correctly stopping where another button occludes. A real
+  click still functions with the pass enabled. Checked console on 2
+  genuinely fresh tabs (not the long-lived test tab, whose console
+  history persists across reloads and showed a stale shader-patch-
+  failure error from an earlier whitespace-mismatch attempt) -- zero
+  errors on either fresh tab.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
