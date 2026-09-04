@@ -82,6 +82,79 @@ Verified:
   off and confirmed no errors remained.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 04:17 AM - 04:42 AM EDT
+
+3-item round: user asked to port OKCILCOKCID's camera architecture, then 2
+more reports arrived mid-turn while that was in progress ("click and drag
+to reorder function doesnt work well. the dragged element becoms dark",
+"outlien doesnt work well. Its making an outline for ALL BUTTONS and ALL
+BASES etc... AND the outline doesnt work in black. looks like a blending
+issue").
+
+Added:
+- Camera architecture ported from OKCILCOKCID: position sliders (X/Y/Z)
+  now translate camera.position AND controls.target together (true
+  world-space translation, doesn't swing the view angle -- the same
+  "you provided me rotation sliders only" bug that project's own history
+  already fixed once). Added Camera Yaw/Pitch sliders (rotate target
+  around a fixed position/distance -- a genuine "turn in place",
+  independent of position/zoom) and a Camera Zoom slider (distance-to-
+  target). Camera panel values now sync from live state every frame
+  (previously only on Copy/Save Settings clicks), so mouse-driven
+  orbit/pan/zoom shows up in the sliders immediately. Camera presets now
+  store position+FOV+Zoom only (no target), matching the reference
+  project's exclusion of target from a preset's identity. Removed
+  cameraTargetX/Y/Z; bumped SETTINGS_SCHEMA_VERSION to 3.
+
+Fixed:
+- Drag-to-reorder rows/groups reading as "becoming dark" while dragging:
+  root cause was `opacity:0.4` on the dragged item, which against this
+  panel's near-black background made the text nearly disappear instead
+  of clearly indicating what's being moved. Swapped for full opacity
+  plus a light background tint and an accent-colored outline.
+- OutlinePass (screen-space outline) merging neighboring buttons into
+  one connected outline: it draws an edge only where its own selection's
+  mask touches an UNselected pixel, so it can't tell two different
+  SELECTED objects apart -- with one shared selectedObjects array per
+  mesh-type across the whole grid, any two orthogonally-adjacent
+  same-type cells whose silhouettes touched on screen merged into one
+  outline (visible as long wavy lines running down entire rows). Split
+  each mesh-type into a checkerboard 2-coloring by grid cell
+  ((row+col)%2) -- 4 OutlinePass instances instead of 2 -- so no two
+  orthogonally-adjacent cells ever share a selection. Not a full
+  per-object fix (that needs one pass per cell, infeasible for a grid
+  this size); a diagonal touch between same-color cells could still
+  merge, a rarer case than the row-wise merging this specifically fixes.
+- Caught and fixed a self-introduced bug while porting the camera
+  architecture, via direct live camera/target inspection rather than
+  visual inspection alone: an initial draft kept a redundant wholesale
+  position re-apply after the per-slider replay loop in
+  applyAllSettings(), which silently clobbered the Camera Zoom slider's
+  own already-correct replay on Reset/boot. Removed the now-dead
+  applyCameraSettings() wholesale function entirely.
+
+Verified:
+- Camera: live-tested position-translate (Yaw/Pitch/Zoom stayed exactly
+  constant while translating), Yaw-rotate (position/Zoom stayed exactly
+  constant while rotating), Zoom (direction stayed constant), Reset (via
+  window.__debug live inspection -- confirmed position/target/zoom end
+  up mutually consistent, not just visually plausible), and Save/Use
+  Camera preset round-trip (exact value match). Confirmed a fresh reload
+  renders identically to before the port (no regression to the default
+  view).
+- Drag-dark fix: reproduced the exact pre-fix visual (opacity 0.4,
+  computed style confirmed) via real PointerEvent dispatch on the grip
+  element, then confirmed post-fix computed style (opacity 1, tinted
+  background, accent outline) and that the class is correctly removed on
+  drop.
+- Outline merging fix: screenshotted before (long connected wavy lines
+  across rows) and after (each button visibly separated) with a real
+  reload between; confirmed a real click still functions with the
+  screen-space pass enabled; checked the console after each change (only
+  pre-existing transient local-dev-server ERR_CONNECTION_RESET entries
+  from rapid reloads, no new script errors).
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
