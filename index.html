@@ -595,6 +595,32 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // edge was rendered but invisible. Normal (alpha) blending composites correctly for any
     // edge color, including black.
     pass.overlayMaterial.blending = THREE.NormalBlending;
+    // Patches a genuine gap in OutlinePass's own edgeDetectionMaterial (three@0.169.0, this
+    // import map's pinned version -- inspected live via pass.edgeDetectionMaterial.
+    // fragmentShader, not guessed): a "hidden" (occluded-by-other-geometry) edge pixel gets
+    // hiddenEdgeColor for its RGB but the EXACT SAME alpha (the edge-detection magnitude
+    // `d`) as a genuinely visible edge pixel -- the two differ only by color, never by how
+    // strongly they're drawn. Under AdditiveBlending that was harmless as long as
+    // hiddenEdgeColor was black (adding zero draws nothing either way) -- which is also
+    // exactly why a black VISIBLE edge was invisible too, the original bug this pass's
+    // NormalBlending fix above addressed. But NormalBlending has no such free cancellation:
+    // once switched, hidden edges started drawing just as opaquely as visible ones, right
+    // through whatever button is actually occluding them -- reported directly by the user
+    // ("outline of a button being obscured by another button... should not have its entire
+    // outline shown"). Forcing a hidden edge's alpha to 0 here makes it contribute nothing
+    // under any blending mode, independent of hiddenEdgeColor's RGB value -- true
+    // depth-respecting occlusion, which isn't reachable through the pass's public
+    // visibleEdgeColor/hiddenEdgeColor/blending properties alone.
+    var patched = pass.edgeDetectionMaterial.fragmentShader.replace(
+      "vec3 edgeColor = 1.0 - visibilityFactor > 0.001 ? visibleEdgeColor : hiddenEdgeColor;\n\t\t\t\t\tgl_FragColor = vec4(edgeColor, 1.0) * vec4(d);",
+      "bool isVisibleEdge = 1.0 - visibilityFactor > 0.001;\n\t\t\t\t\tvec3 edgeColor = isVisibleEdge ? visibleEdgeColor : hiddenEdgeColor;\n\t\t\t\t\tgl_FragColor = vec4(edgeColor, 1.0) * vec4(isVisibleEdge ? d : 0.0);"
+    );
+    if (patched === pass.edgeDetectionMaterial.fragmentShader) {
+      console.error("OutlinePass edgeDetectionMaterial shader patch did not match -- hidden edges will render fully opaque through occluding geometry. Likely a three.js version change; re-inspect pass.edgeDetectionMaterial.fragmentShader.");
+    } else {
+      pass.edgeDetectionMaterial.fragmentShader = patched;
+      pass.edgeDetectionMaterial.needsUpdate = true;
+    }
     composer.addPass(pass);
     return pass;
   }
