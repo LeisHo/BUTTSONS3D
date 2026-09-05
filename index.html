@@ -400,6 +400,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     debugHideBase: false,
     debugHideExterior: false,
     debugHideInterior: false,
+    debugHideExtension: false,
 
     devTitleFontSize: 13,
     devTabFontSize: 11.5,
@@ -426,7 +427,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
       shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow"],
-      debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior"]
+      debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior", "debugHideExtension"]
     },
     _collapsedGroups: ["devpanel", "button", "lighting", "scene", "camera", "debug"]
   };
@@ -505,7 +506,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "debugWireframe", label: "Wireframe", material: true },
     { key: "debugHideBase", label: "Hide Base Model", visibility: true },
     { key: "debugHideExterior", label: "Hide Button Exterior Model", visibility: true },
-    { key: "debugHideInterior", label: "Hide Button Interior Model", visibility: true }
+    { key: "debugHideInterior", label: "Hide Button Interior Model", visibility: true },
+    { key: "debugHideExtension", label: "Hide Extension (Base-to-Button Connector)", visibility: true }
   ];
 
   var COLOR_CONFIG = [
@@ -951,8 +953,22 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // buttonRadius), times extensionRadiusMargin -- a deliberate overhang so the extension's
     // straight-sided cylinder actually covers the cap's curved (not flat-bottomed) underside
     // from steep/low camera angles; see extensionRadiusMargin's own DEFAULT_SETTINGS comment
-    // for the measured investigation behind that margin.
-    var extRadius = settings.buttonRadius * NATURAL_EXTERIOR_RADIUS * settings.extensionRadiusMargin;
+    // for the measured investigation behind that margin. Clamped to never exceed the base's
+    // own current radius -- reported directly by the user ("i see a geoemtry that is a wider
+    // diameter than my base... even if i click hide base, hide button ext, hide button int,
+    // its still visible"): extensionRadiusMargin's own default (1.5x) was verified to make
+    // extRadius (2.25 at buttonRadius 1) genuinely exceed NATURAL_BASE_RADIUS (2.03125) --
+    // the margin was tuned purely against the cap's own curved underside (the problem it was
+    // built to fix) without checking it against the OTHER thing the extension connects to,
+    // the base -- so it could visibly poke out past the base's own edge, and (being outside
+    // any of debugHideBase/Exterior/Interior's own meshes) stayed visible regardless of any
+    // of those 3 toggles, which is exactly the bug reported. Math.min against the base's own
+    // radius guarantees the extension can never be the widest thing in the stack, regardless
+    // of how the margin above is tuned.
+    var extRadius = Math.min(
+      settings.buttonRadius * NATURAL_EXTERIOR_RADIUS * settings.extensionRadiusMargin,
+      settings.baseRadius * NATURAL_BASE_RADIUS
+    );
     var extGeo = new THREE.CylinderGeometry(extRadius, extRadius, 1, 24);
 
     for (var r = 0; r < rows; r++) {
@@ -988,6 +1004,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         };
         baseMesh.visible = !settings.debugHideBase;
         exteriorMesh.visible = !settings.debugHideExterior;
+        extMesh.visible = !settings.debugHideExtension;
         updateInteriorVisibility(cell);
         exteriorMesh.userData.cell = cell;
         capGroup.position.y = capRestY(cell);
@@ -1205,6 +1222,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     cells.forEach(function (c) {
       c.baseMesh.visible = !settings.debugHideBase;
       c.exteriorMesh.visible = !settings.debugHideExterior;
+      c.extMesh.visible = !settings.debugHideExtension;
       updateInteriorVisibility(c);
     });
   }
