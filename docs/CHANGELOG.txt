@@ -431,6 +431,49 @@ Verified:
   with no console errors.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 08:43 PM - 08:58 PM EDT
+
+User reported the outline bugs from the previous round were still
+happening on their actual phone (deployed Vercel site,
+buttsons-3-d.vercel.app), even though desktop testing all session had
+shown them fixed: "I can see the base's outlines through the button
+object and the button objects themselves don't seem to have outlines."
+Also flagged a separate "zoomed super out on startup" issue on desktop,
+which they deferred for later.
+
+Fixed:
+- Discovered (via `AskUserQuestion` ruling out a stale local-save theory
+  for the zoom issue, then fetching the deployed site's actual HTML and
+  reproducing live at a mobile viewport) that the outline bug was real
+  and reproducible on a completely clean load -- just only at
+  devicePixelRatio 2+ (real phones), not the devicePixelRatio 1 desktop
+  environment used for all of today's earlier testing.
+- Root cause confirmed directly against EffectComposer.js's own source:
+  its constructor caches renderer.getPixelRatio() once, and every pass's
+  setSize() reuses that cached value forever -- never re-reading the
+  renderer's live pixel ratio. This project constructs the composer
+  before resize() ever runs (resize() is what raises the renderer's
+  pixel ratio to match the device, up to 2x); on desktop that cached "1"
+  happens to already be correct, which is exactly why extensive desktop
+  testing never caught this. On a real high-DPI phone it left the 2
+  OutlinePass instances' own internal render targets sized for 1x while
+  the main canvas actually draws at 2x -- a genuine resolution mismatch.
+- Fixed by calling composer.setPixelRatio(renderer.getPixelRatio()) in
+  resize() -- a real method the class already exposes.
+
+Verified:
+- Reproduced the exact bug (funnel-shaped gaps, no button outline) at a
+  devicePixelRatio:2 mobile viewport on a clean load, both against the
+  live deployed site directly and locally via resize_window mobile
+  emulation, before writing any fix.
+- After the fix: clean outlines at devicePixelRatio:2, confirmed desktop
+  (devicePixelRatio:1) stays visually unchanged (correctly a no-op
+  there), and a real click still functions with no console errors.
+
+Still open: the "zoomed super out on startup" report on desktop --
+deferred by the user for a later round, not investigated this round.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
