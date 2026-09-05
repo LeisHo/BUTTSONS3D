@@ -31,6 +31,23 @@
     inset: 0;
     display: block;
   }
+  /* Shown only until BUTTON MODEL.fbx finishes loading (see loadButtonModel()'s .then) --
+     a real binary asset fetch, unlike everything else on this page, so on a slow/cold
+     connection there's a genuine multi-second window with nothing on screen otherwise
+     (the ground plane stays hidden until then too -- see its own construction comment). */
+  #loadingOverlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8a8f9c;
+    font: 14px system-ui, sans-serif;
+    pointer-events: none;
+    background: var(--app-bg-color);
+    z-index: 1;
+  }
+  #loadingOverlay.hidden { display: none; }
 
   /* ---- Dev panel (mechanics ported from the BUTTSONS project's own dev panel) ---- */
   body:not(.dev-enabled) #devPanel { display: none !important; }
@@ -227,6 +244,8 @@
 <body>
 
 <canvas id="sceneCanvas"></canvas>
+
+<div id="loadingOverlay">Loading model&hellip;</div>
 
 <div id="devPanel">
   <div class="dev-resize-edge n"></div>
@@ -726,6 +745,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   var groundMat = new THREE.MeshBasicMaterial({ color: settings.groundColor });
   var ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
+  // Hidden until regenerateGrid() runs for the first time (gated on modelReady) and scales
+  // this up to the real groundSize -- without this, the brief window while BUTTON MODEL.fbx
+  // is still downloading (a real binary asset fetch, unlike everything else on this page)
+  // showed the ground plane at its raw, never-yet-scaled PlaneGeometry(1,1) size: at the
+  // default camera distance/FOV that's an all-but-invisible sliver near the center of an
+  // otherwise black screen, no buttons -- reported directly by the user as "zoomed super out
+  // on startup," easy to mistake for a persistent camera/zoom bug (as this session did at
+  // first) rather than a slow/cold FBX fetch with no loading indicator to explain the wait.
+  ground.visible = false;
   scene.add(ground);
 
   function buildGradientMap(bands, floorPct, ceilPct) {
@@ -916,6 +944,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     var totalD = (rows - 1) * spacingZ;
 
     ground.scale.set(settings.groundSize, settings.groundSize, 1);
+    ground.visible = true; // see its own construction-site comment: hidden until this first real regen
     groundMat.color.set(settings.groundColor);
 
     // Matches BUTTON_EXTERIOR's own diameter (scaled the same way the cap itself is, via
@@ -1766,7 +1795,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // Grid/material/camera/light setup waits on the button model finishing its async load
   // (regenerateGrid() no-ops via its own modelReady guard until then anyway, but calling
   // applyAllSettings() only after resolve avoids doing that work twice).
-  loadButtonModel().then(applyAllSettings);
+  loadButtonModel().then(function () {
+    applyAllSettings();
+    var overlay = document.getElementById("loadingOverlay");
+    if (overlay) overlay.classList.add("hidden");
+  });
 })();
 </script>
 </body>
