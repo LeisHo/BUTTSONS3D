@@ -474,6 +474,49 @@ Still open: the "zoomed super out on startup" report on desktop --
 deferred by the user for a later round, not investigated this round.
 
 --------------------------------------------------------------------------------
+2026-09-04 -- 09:26 PM - 09:46 PM EDT
+
+User sent a screenshot of the deferred "zoomed super out on startup"
+report: a tiny diamond-shaped ground plane sliver near screen center, no
+buttons visible.
+
+Investigated a wrong lead first, caught it, and corrected course:
+- Reproduced a "content confined to one corner" pattern at a custom
+  1920x1080 test viewport in this session's own Browser pane tooling,
+  and initially treated it as the same bug -- but on closer comparison
+  it didn't match the user's actual screenshot (a small diamond near
+  CENTER, not content pinned to a corner). Confirmed by retesting at
+  the pane's own native viewport size (no custom emulation) that the
+  deployed site actually renders correctly -- the corner-confinement
+  was a testing-tool artifact specific to a viewport larger than the
+  pane's native display area, not a real app bug. Recorded this
+  explicitly rather than shipping a fix for the wrong problem.
+
+Fixed the real issue:
+- BUTTON MODEL.fbx is a genuine binary asset fetch, unlike everything
+  else on this page. There's a real window between page load and the
+  model finishing download+parse where regenerateGrid() no-ops (its own
+  modelReady guard) -- during that window the ground plane sat at its
+  raw, never-yet-scaled PlaneGeometry(1,1) size (groundSize scaling only
+  happens inside regenerateGrid()), rendering as an almost-invisible
+  sliver near screen center with no buttons at the default camera
+  distance/FOV -- exactly matching the report. No loading indicator
+  existed to explain the wait.
+- ground.visible now starts false, set true only the first time
+  regenerateGrid() actually runs with real geometry/scale. Added a
+  simple "Loading model..." text overlay, shown by default and hidden
+  once the model load promise resolves (success or failure alike).
+
+Verified:
+- Confirmed the deployed site renders correctly at the test tool's
+  native viewport size, ruling out the corner-confinement artifact as
+  related to this bug.
+- Directly simulated the pre-load visual state (overlay shown, ground/
+  buttons hidden) -- confirmed it now reads as a clean loading message
+  instead of a confusing tiny artifact -- and confirmed the overlay
+  correctly auto-hides after a real load completes, no console errors.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
