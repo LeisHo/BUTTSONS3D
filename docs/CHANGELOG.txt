@@ -517,6 +517,44 @@ Verified:
   correctly auto-hides after a real load completes, no console errors.
 
 --------------------------------------------------------------------------------
+2026-09-05 -- 07:13 PM - 07:29 PM EDT
+
+User reported "i see a geoemtry that is a wider diameter than my base.
+even if i click hide base, hide button ext, hide button int, its still
+visible" and "your outline is still showing on top of models." Also
+suggested trying an OutlinePass pass-reordering tip from a Discourse
+thread.
+
+Checked the pass-reordering suggestion first: this project's pipeline
+already matches it exactly (RenderPass, then both OutlinePass instances,
+then OutputPass, no FXAA at all) -- told the user directly it wouldn't
+change anything rather than applying it as busywork.
+
+Fixed the real cause (already suspected from code inspection before any
+live testing):
+- extensionRadiusMargin's 1.5x default (added 2 rounds ago to fix "I
+  should not be able to see under the button") was tuned only against
+  the button's own curved underside, without checking it against the
+  other thing the extension connects to -- the base. At default
+  settings, extRadius (2.25) genuinely exceeded NATURAL_BASE_RADIUS
+  (2.03125), so the connector visibly poked out past the base's own
+  edge. It also isn't covered by any of the 3 existing hide toggles, so
+  none of them could hide it.
+- Clamped extRadius to Math.min(margin-adjusted radius, the base's own
+  current radius) so the extension can never be the widest thing in the
+  stack. Added a 4th debug toggle (debugHideExtension) to isolate it on
+  its own too.
+
+Verified: reproduced the exact bug live (checked all 3 existing hide
+toggles, the wider ring with its own outline stayed fully visible)
+before fixing; after the fix, all 4 toggles together correctly empty
+the scene, the default view is clean, and the earlier under-button-gap
+fix still substantially holds (a much smaller residual sliver in some
+gaps vs. the original wide funnel-shaped gap -- an acceptable trade for
+no longer overshooting the base). Real click still functions, no
+console errors on a fresh tab.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
