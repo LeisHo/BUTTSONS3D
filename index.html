@@ -1273,6 +1273,25 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    // EffectComposer caches renderer.getPixelRatio() ONCE at its own construction time
+    // (new EffectComposer(renderer), which happens before this function's first-ever call --
+    // at that point the renderer's pixel ratio is still three.js's own default of 1, since
+    // the line above hasn't run yet) and never re-reads it afterward; composer.setSize()
+    // alone reuses that stale cached ratio instead of the renderer's real, current one. On a
+    // devicePixelRatio:1 desktop/dev environment that cached "1" is coincidentally already
+    // correct, which is exactly why this went unnoticed through extensive desktop testing --
+    // on a real high-DPI phone (devicePixelRatio 2-3) it left the 2 OutlinePass instances'
+    // own internal mask/edge/blur render targets sized for 1x while the main renderer/canvas
+    // actually draws at 2x-3x, a genuine resolution mismatch. Reported directly by the user
+    // ("I can see the base's outlines through the button object and the button objects
+    // themselves don't seem to have outlines") and confirmed by fetching the deployed site at
+    // a mobile viewport (devicePixelRatio 2) with a clean, non-mobile-tested browser profile --
+    // reproduced immediately; verified the exact mechanism against EffectComposer.js's own
+    // source (constructor and addPass()) rather than assumed. composer.setPixelRatio() (a
+    // real method the class already exposes) updates its cached ratio AND calls its own
+    // setSize() to propagate to every pass -- calling it every resize keeps it correctly
+    // synced to whatever the renderer's pixel ratio actually is.
+    composer.setPixelRatio(renderer.getPixelRatio());
     composer.setSize(w, h);
   }
   window.addEventListener("resize", resize);
