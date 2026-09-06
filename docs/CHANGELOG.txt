@@ -1329,6 +1329,72 @@ require a re-export). Awaiting the user's preference before implementing --
 not yet fixed as of this entry.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 08:35 AM - 08:52 AM EDT (16m53s)
+
+User chose "re-export from Blender" for the prior round's top-cap question,
+then asked 2 quick things (answered directly from code, no changes needed)
+before the main task: (1) "does the height of the button exterior change
+when i click it?" -- no, capGroup.scale is set once per regen and never
+touched by click/press code; only capGroup.position.y animates (a dip during
+a press, a permanent rise/fall from held-click height gain) -- the button
+moves, it doesn't stretch. (2) "how come i see 2 topcaps?" -- investigated
+live (isolated the extension, toggled its baked outline shell on/off) but
+couldn't conclusively distinguish 2 real cap faces from a single cap's far-
+wall-plus-cap silhouette at that camera angle; reported the ambiguity
+honestly and asked the user to clarify rather than guessing further --
+answered by their own next re-export, see below.
+
+Then: "i updated the buttons outlines gltf file. it include the extensiion,
+s replace the extension with that geometry" -- BUTTON OUTLINES.glb now
+merges BUTTON_EXTENSION directly into the combined file (5 main meshes
+instead of 4), replacing the separate data/BUTTON EXTENSION OUTLINES.glb
+this session had been using since 2 rounds ago.
+
+Measured the real re-exported geometry live (temporary debug logs, removed
+before committing) rather than assuming the old 4-part sort logic would
+generalize: the widest mesh is still base (radius 2.03125); the next 2 by
+radius are exterior and extension, but their radii are nearly identical
+(1.5 and 1.5183050632476807 -- confirmed the user modeled the extension to
+the exterior's exact footprint) and NOT reliably separable by radius alone;
+their HEIGHTS differ clearly instead (~2 vs ~1, exterior being a full button
+cap vs. the extension's short connector shaft) -- confirmed on the actual
+file before writing the logic. Rewrote assignMainParts() to handle both a
+4-mesh export (old logic, unchanged) and a 5-mesh export (new: top-2-by-
+radius pair split by height instead of assumed-exterior-is-always-2nd-
+widest). assignOutlineParts()'s candidate slot list now includes "extension"
+when present. loadButtonModel() accepts 4 or 5 main meshes, measures
+NATURAL_EXTENSION_RADIUS/HEIGHT/MIN_Y live off the merged mesh the same way
+NATURAL_EXTERIOR_MIN_Y/RADIUS already are, and the outline-count warning
+message now reports against mainInfos.length instead of a hardcoded 4.
+
+Removed loadExtensionModel() and its call in Init's Promise.all() entirely
+-- per the user's explicit "replace" request, the standalone file is no
+longer referenced by any code (left on disk, not deleted -- removing a
+committed asset wasn't asked for). extGeo/extNaturalRadius/extNaturalHeight/
+extNaturalMinY still fall back to modelGeo.exterior's own values if a future
+export ever reverts to 4 meshes.
+
+This same re-export also happens to answer the earlier top-cap question:
+this file's extension mesh no longer has a min.y offset at all (measured
+~1.3e-17, i.e. exactly 0, vs. the prior round's measured -0.0762) and, more
+directly, isolating the extension and looking straight down into its
+opening now shows a genuinely open tube -- no solid cap face -- confirming
+the user's Blender edit removed it as intended. This re-export also dropped
+ALL baked outline shells (0 of 5 found, where the prior combined-file
+export had 2 of 4) -- expected/handled, not an error; every part renders
+via the existing screen-space/procedural outline fallback instead this
+round.
+
+Verified: fresh tab, no console errors. Isolated the extension alone (1x1
+grid, other parts hidden) at several rotation angles -- an initial near-
+edge-on angle made it look like a broken thin crescent, which turned out to
+be a viewing-angle artifact, not a real defect; rotating to a normal 3/4
+angle confirmed a properly proportioned band matching the pre-merge
+standalone-file version's appearance. Full assembled single button and the
+dense default 14x14 grid both render correctly with no seams, gaps, or
+artifacts at the extension/exterior boundary.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
