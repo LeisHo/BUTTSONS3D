@@ -1579,22 +1579,29 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
     actions.appendChild(btnSaveCam);
 
-    var btnUseCam = document.createElement("button");
-    btnUseCam.textContent = "Use Camera";
-    btnUseCam.addEventListener("click", function () {
-      var opt = cameraPresetSelect.selectedOptions[0];
-      if (!opt) return;
-      var cam = settings._savedCameras[parseInt(opt.value, 10)];
-      if (!cam) return;
-      // Position + FOV only, no target/yaw/pitch touched -- matches OKCILCOKCID's
-      // useCameraPreset() exactly (see DEFAULT_SETTINGS._savedCameras' own comment for why
-      // target isn't part of a preset's stored identity). camera.position.set() here is a
-      // direct absolute jump, not a translate -- unlike the position SLIDERS, a preset is a
-      // literal "go here," not "move by this much."
+    // Position + FOV only, no target/yaw/pitch touched -- matches OKCILCOKCID's
+    // useCameraPreset() exactly (see DEFAULT_SETTINGS._savedCameras' own comment for why
+    // target isn't part of a preset's stored identity). camera.position.set() here is a
+    // direct absolute jump, not a translate -- unlike the position SLIDERS, a preset is a
+    // literal "go here," not "move by this much." Shared by Use Camera and Save to Default
+    // below, which both need "jump to this preset" before doing their own separate thing.
+    function applyCameraPreset(cam) {
       camera.position.set(cam.cameraX, cam.cameraHeight, cam.cameraDistance);
       camera.fov = cam.cameraFov;
       camera.updateProjectionMatrix();
       syncCameraSettingsFromLive();
+    }
+
+    function selectedCamera() {
+      var opt = cameraPresetSelect.selectedOptions[0];
+      return opt ? settings._savedCameras[parseInt(opt.value, 10)] : null;
+    }
+
+    var btnUseCam = document.createElement("button");
+    btnUseCam.textContent = "Use Camera";
+    btnUseCam.addEventListener("click", function () {
+      var cam = selectedCamera();
+      if (cam) applyCameraPreset(cam);
     });
     actions.appendChild(btnUseCam);
 
@@ -1608,6 +1615,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       renderCameraPresetOptions();
     });
     actions.appendChild(btnDeleteCam);
+
+    // Select a saved camera, then this jumps to it AND persists that as the app's own
+    // default (the same git-tracked settings log Save Settings itself writes to -- see
+    // saveSettingsToDefault()), so the next reload/Reset opens directly on this view instead
+    // of needing "Use Camera" + a separate full Save Settings click every time.
+    var btnSaveDefaultCam = document.createElement("button");
+    btnSaveDefaultCam.textContent = "Save to Default";
+    btnSaveDefaultCam.addEventListener("click", function () {
+      var cam = selectedCamera();
+      if (!cam) return;
+      applyCameraPreset(cam);
+      saveSettingsToDefault(this);
+    });
+    actions.appendChild(btnSaveDefaultCam);
 
     wrap.appendChild(actions);
     return wrap;
@@ -2197,8 +2218,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     document.body.removeChild(ta);
   }
 
-  document.getElementById("btnSave").addEventListener("click", function () {
-    var btn = this;
+  // Shared by the main Save Settings button and the Camera group's own "Save to Default"
+  // (see buildCameraPresetsUI()) -- both write the CURRENT live settings (whatever they are
+  // at the moment of the click) to the git-tracked settings log the same way.
+  function saveSettingsToDefault(btn) {
     savePanelGeometry();
     syncCameraSettingsFromLive();
     var toSave = Object.assign({}, settings, { _schemaVersion: SETTINGS_SCHEMA_VERSION });
@@ -2228,6 +2251,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     }).catch(function () {
       flashButton(btn, "Save failed");
     });
+  }
+
+  document.getElementById("btnSave").addEventListener("click", function () {
+    saveSettingsToDefault(this);
   });
 
   document.getElementById("btnReset").addEventListener("click", function () {
