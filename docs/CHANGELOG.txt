@@ -615,6 +615,69 @@ clean outlines on every button and base, no merging, no white/background
 artifact, no console errors, real click still functions.
 
 --------------------------------------------------------------------------------
+2026-09-05 -- 09:50 PM - 10:04 PM EDT
+
+User reported, with an annotated screenshot of 2 overlapping buttons: (1) the
+extension should reach from the base's own bottom up to the button's bottom,
+masked beneath the base, not just from the base's top; (2) green arrows --
+white artifacts where different parts' outlines meet; (3) blue arrows -- the
+base's outline showing on top of the button/extension within the same
+instance; (4) pink arrow -- a button's outline should show on top of any
+other instance's geometry that's visually behind it; (5) purple arrow -- an
+instance's outline that's behind another instance should never show on top
+of the front instance's geometry.
+
+Fixed the extension span (item 1):
+- updateExtension() previously spanned from the base's TOP (baseTop) to the
+  cap's bottom. Changed to span from group-local y=0 (the base's own bottom,
+  same origin as baseMesh) to the cap's bottom, so the lower portion is
+  simply hidden inside the base's own opaque geometry rather than stopping
+  exactly at the base's top edge. Verified live by isolating the extension
+  alone (all 3 other debug hide toggles on): now a clean straight-sided
+  cylinder from the ground up to the button, not just base-top upward.
+
+Fixed the in-group base-outline-over-button overlap (item 3, blue arrows):
+- Root cause: addOutline()'s default puffs all 3 local axes ("xyz"). Since
+  baseMesh's local origin sits at its own bottom (group y=0), puffing Y
+  scales distances from that origin -- the bottom stays fixed but the TOP
+  face moves up by baseHeight*outlineThickness, directly into the cap's own
+  space (the cap sits flush on the base's real top). Fixed by passing "xz"
+  to addOutline(cell, baseMesh, ...), matching the treatment extMesh's own
+  outline already used for exactly this reason.
+
+Fixed the white/light artifact at outline junctions and the cross-instance
+depth-ordering complaints (items 2, 4, 5 -- green/pink/purple arrows):
+- These traced to a single cause, not 3 separate bugs: outlineThickness's
+  default (0.21) puffs the inverted-hull outline shells far enough that they
+  self-intersect with the real mesh's own concave/complex features (the
+  base's non-flat underside, the step where the narrower cap sits on the
+  wider base) -- not a depth-sort or render-order bug, a geometry
+  self-intersection at that thickness. Confirmed by toggling outlineEnabled
+  off entirely on the exact same close-up 2-button framing: the light
+  streaks were not present on the bare solid geometry, proving they were
+  outline-shell-generated. Then confirmed thickness dependence directly:
+  0.21 reproduced a jagged, lighter-colored crown of artifacts around the
+  base's underside and at the cap/base shoulder corner (matching the
+  reported green-arrow locations); 0.05 removed it entirely; 0.1 also
+  removed it while staying clearly visible as an outline, checked at both a
+  close 2-button framing (matching the user's screenshot layout: 1 column, 2
+  rows, oriented and zoomed to reproduce the reported overlap) and the full
+  default 14x14 grid. Changed DEFAULT_SETTINGS.outlineThickness from 0.21 to
+  0.1. No render-order or depth-test bug was ever found for items 4/5 --
+  once the self-intersection artifact was gone, both the "outline in front
+  of the wrong instance" and "outline behind, showing through" symptoms were
+  gone too, since normal opaque z-buffer depth testing already handles
+  cross-instance ordering correctly once the geometry itself isn't
+  self-intersecting.
+
+Verified: fresh reload at default settings (14x14 grid) -- clean outlines
+throughout, no merging, no white/light artifacts, no console errors, real
+click still functions. Also re-verified the exact reported scenario (a 1x2
+grid rotated/zoomed to reproduce the screenshot's 2-button overlap) after
+baking all 3 fixes into DEFAULT_SETTINGS: no blue/green/pink/purple artifacts
+at any of the flagged junctions.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

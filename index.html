@@ -381,7 +381,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     toonHighlightCeiling: 100,
 
     outlineEnabled: true,
-    outlineThickness: 0.21,
+    // Default lowered from 0.21 -- at that thickness, the puffed-out geometry-outline shell
+    // is large enough to self-intersect with the real mesh's own complex/concave features
+    // (the base's non-flat underside, the step where the narrower cap sits on the wider
+    // base) rather than staying a thin silhouette shell. Reported directly, with a
+    // screenshot, as a light/white artifact appearing wherever two different parts'
+    // outlines meet. Live A/B at the exact same camera angle confirmed: 0.21 reproduces a
+    // jagged, lighter-colored crown of self-intersection artifacts around the base's
+    // underside and at the cap/base shoulder corner; 0.05 removes it entirely; 0.1 also
+    // removes it while staying clearly visible as an outline (checked at both a close 2-
+    // button framing and the full default 14x14 grid). No code logic bug involved -- purely
+    // a thickness-vs-geometry-complexity tradeoff; the slider remains available to go
+    // thicker again if a future, less concave model doesn't need this headroom.
+    outlineThickness: 0.1,
     outlineColor: "#000000",
     // Defaults to Geometry mode (false), not the screen-space OutlinePass. Directly reported,
     // repeatedly: base outline showing on top of the button, buttons missing their own outline,
@@ -925,17 +937,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return settings.baseHeight * NATURAL_BASE_HEIGHT + cell.currentGain;
   }
 
-  // Keeps the extension cylinder stretched to exactly fill the gap between the base's
-  // top and the cap's current bottom face -- covers both the height-gain case (cap rests
-  // higher, gap opens up) and the mid-press case (cap dips toward/into the base, gap
-  // shrinks toward 0). The cap's own local origin is already at its authored bottom (no
-  // half-height subtraction needed, unlike the old centered placeholder cylinder).
+  // Spans the extension cylinder from the base's own bottom (group-local y=0, same as
+  // baseMesh's own origin) up to the cap's current bottom face -- not just from the
+  // base's top. Reported directly: the extension should reach all the way down to the
+  // base's bottom, with the portion below the base's top simply masked (hidden) inside
+  // the base's own opaque geometry, rather than stopping exactly at the base's top edge.
+  // Covers both the height-gain case (cap rests higher, span grows) and the mid-press
+  // case (cap dips toward/into the base, span shrinks toward the base-bottom-to-0 floor).
+  // The cap's own local origin is already at its authored bottom (no half-height
+  // subtraction needed, unlike the old centered placeholder cylinder).
   function updateExtension(cell) {
     var capBottom = cell.capGroup.position.y;
-    var baseTop = settings.baseHeight * NATURAL_BASE_HEIGHT;
-    var gap = Math.max(0.0005, capBottom - baseTop);
-    cell.extMesh.scale.y = gap;
-    cell.extMesh.position.y = baseTop + gap / 2;
+    var span = Math.max(0.0005, capBottom);
+    cell.extMesh.scale.y = span;
+    cell.extMesh.position.y = span / 2;
   }
 
   // Row stagger: alternating (odd rows offset, even rows not) by default, or a growing
@@ -1017,7 +1032,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         capGroup.position.y = capRestY(cell);
         updateExtension(cell);
 
-        addOutline(cell, baseMesh);
+        // "xz" only, matching extMesh's own treatment below -- baseMesh's local origin
+        // sits at its own bottom (group y=0), so a full "xyz" puff (the default) stretches
+        // distances from that origin, leaving the bottom fixed but pushing the TOP face
+        // up by baseHeight*outlineThickness -- directly into the cap's own space, since
+        // the cap sits flush on the base's real top. Reported directly as the base's
+        // outline showing on top of the button/extension within the same instance group.
+        addOutline(cell, baseMesh, "xz");
         addOutline(cell, exteriorMesh);
         addOutline(cell, unpressedMesh);
         addOutline(cell, pressedMesh);
