@@ -1153,6 +1153,55 @@ has outline shells for only 2 of 4 parts -- expected, since the interior
 domes never had or needed one).
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 04:34 AM - 04:43 AM EDT (8m45s)
+
+User asked whether the dev panel's Save Settings button saves to Git -- the
+panel's own status text at the time said "Local-only for now -- git-tracked
+sync not wired up yet for this project," which was accurate: Save only wrote
+to that browser's own localStorage. Wired it up properly, per user's "do
+that" (explicit follow-up to this exchange).
+
+Found dev_server.py already exposed a working /api/save-settings POST route
+(writes to data/processed/dev-panel-settings.json) that the client never
+actually called -- likely built in a prior round in anticipation of this, or
+copied from the sibling BUTTSONS project's own scripts/active/dev_server.py,
+which already fully implements this exact pattern (client + server) and was
+used directly as the reference.
+
+Added/Changed (index.html):
+- Save Settings now POSTs to /api/save-settings when served over http(s);
+  falls back to the previous localStorage-only behavior under file:// (no
+  server to receive the write) -- matches CLAUDE.md 12l's documented
+  exception exactly.
+- Boot-time settings loading (previously synchronous, localStorage-only) is
+  now async: loadSavedDefaults() fetches the git-tracked
+  data/processed/dev-panel-settings.json when running over http(s), falling
+  back to DEFAULT_SETTINGS on a 404/failure (e.g. before the first-ever
+  Save). Slotted into the existing loadButtonModel().then() async boot seam
+  via Promise.all() rather than restructuring it -- applyAllSettings()
+  already refreshes every panel control from the resolved settings, so the
+  panel (already built and visible with placeholder defaults) needed no
+  rebuild.
+- Reset is unaffected -- it already restores from the in-memory
+  savedDefaults, which both Save and the boot-time load now keep correct.
+- Updated the panel's own status text to describe the real, now-working
+  behavior instead of the "not wired up yet" placeholder.
+- No GitHub-API/token half of CLAUDE.md 12l was added -- this project has no
+  Vercel (or other) deployment, only a local dev server, so only the local
+  read/write half applies; the sibling BUTTSONS project's api/save-settings.js
+  (Vercel-only) was not needed here.
+
+Verified: fresh tab loads cleanly (a 404 on the settings file is expected
+before any Save exists); clicking Save produces a real 200 POST and the file
+lands on disk with real settings content; changed Column Count from 14 to 6,
+saved, reloaded in the same tab, and the panel/grid both came back showing 6
+-- confirmed via a real value change, not just a status message, that the
+round trip (Save -> git-tracked file -> reload -> read-back) genuinely
+works. Restored Column Count to 14 and re-saved afterward. Committed the
+settings log file itself (data/processed/dev-panel-settings.json) alongside
+index.html, matching the sibling project's own convention of tracking it.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
