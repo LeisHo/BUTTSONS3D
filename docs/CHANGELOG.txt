@@ -1120,6 +1120,39 @@ ground-height slider visibly moves the ground plane, real click still
 functions with no new console errors.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 04:13 AM - 04:26 AM EDT (12m44s)
+
+Gave the button extension (extMesh, the gap-filling connector between base and
+cap) the same baked outline as exteriorMesh, per explicit user request ("my
+button extensions shuold also have the same outine as the button exterior").
+
+Fixed/Added:
+- extMesh already shares modelGeo.exterior's own main geometry (from an
+  earlier round this session). Added a child mesh reusing outlineGeo.exterior
+  (the same outline-shell geometry already computed for exteriorMesh) with
+  bakedOutlineMat, pushed into the same bakedOutlineMeshes array baseMesh's
+  outline already uses -- so it picks up bakedOutlineThickness scaling for
+  free. As a child of extMesh it inherits extMesh's X/Z scale (radius match)
+  and Y scale (live vertical stretch from updateExtension()), so the outline
+  shell stretches with the extension automatically, no extra transform code
+  needed.
+- This reuses the real, depth-tested bakedOutlineMat shell (FrontSide, normal
+  z-buffer occlusion) established earlier this session -- not the earlier
+  screen-space OutlinePass/procedural technique that had its own no-occlusion
+  artifacts (e.g. the earlier line-through-the-base bug); that failure mode
+  doesn't apply to the depth-tested shell approach.
+
+Verified: isolated single extension (1x1 grid, base/exterior/interior hidden
+via debug checkboxes) shows a clean black outline ring at the extension's rim
+matching the exterior's own outline treatment, no fill artifacts or stray
+lines at multiple zoom levels. Full assembly (all parts visible) and the
+dense default 14x14 grid both render correctly with no seams or artifacts at
+the extension/exterior boundary across every button. Fresh tab: no console
+errors (only the pre-existing informational warning that this session's glb
+has outline shells for only 2 of 4 parts -- expected, since the interior
+domes never had or needed one).
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

@@ -1217,6 +1217,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         extMesh.scale.x = extRadiusScale;
         extMesh.scale.z = extRadiusScale;
         group.add(extMesh);
+        // Reuses outlineGeo.exterior (same shape/offset as exteriorMesh's own outline) since
+        // extMesh shares the exterior's main geometry too. As a child of extMesh it inherits
+        // extMesh's X/Z/Y scale (radius match + live vertical stretch from updateExtension()),
+        // so the shell stretches with the extension automatically. This is the depth-tested
+        // bakedOutlineMat shell (FrontSide, real z-buffer occlusion), not the screen-space
+        // OutlinePass technique, so it isn't subject to that technique's no-occlusion artifacts.
+        if (outlineGeo.exterior) { var extOutline = new THREE.Mesh(outlineGeo.exterior, bakedOutlineMat); extMesh.add(extOutline); bakedOutlineMeshes.push(extOutline); }
 
         var capGroup = new THREE.Group();
         capGroup.scale.set(settings.buttonRadius, settings.buttonHeight, settings.buttonRadius);
