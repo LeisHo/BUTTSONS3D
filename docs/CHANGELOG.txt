@@ -1904,6 +1904,75 @@ in, resolved to a decisive negative result on the standing theory but an
 still-open question on the actual cause]
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 03:44 PM - 03:55 PM EDT (10m33s)
+
+User sent an exact reproduction: a screenshot of the deployed site with 4
+green arrows on the white-sliver artifact, paired with a live Copy
+Settings dump captured at that same moment -- exactly what the prior
+round asked for, replacing the earlier approximate camera values with the
+precise ones (cameraX=8.336, cameraHeight=8.915, cameraDistance=-48.54,
+cameraYaw=-9.745, cameraPitch=-13.27, cameraZoom=50.6).
+
+Reproduced the exact camera state locally and ran 2 further objective
+diagnostics (continuing from last round's normals-comparison finding,
+rather than more visual eyeballing):
+
+1. Measured a real, previously-unmeasured fact: a live cell's baseMesh
+   bounding box sits with its bottom at world Y ~ -0.025, while the ground
+   plane's own top surface sits at groundPositionY = -2.7 -- a genuine
+   2.675-unit vertical gap between where a button's base actually ends and
+   where the ground plane actually is. Buttons are placed at each cell's
+   local Y=0 unconditionally; groundPositionY only moves the ground plane
+   itself, with nothing coupling the two. This gap is invisible from most
+   normal (elevated, looking-down) camera angles used throughout this
+   session -- occluded by each button's own body and its neighbors -- but
+   at a low, near-horizontal grazing angle (exactly the angle in every
+   version of the user's reported screenshot), a silhouette-edge ray at
+   the base's exact bottom rim can pass just past the button into that
+   real empty gap and hit the ground plane beyond/below it, or nothing at
+   all -- a plausible, previously-unconsidered mechanism for a thin bright
+   line right at that exact seam, distinct from both the disproven
+   winding theory and a coverage hole in the mesh itself.
+
+2. Ran an objective (not eyeballed) pixel-level scan: read the live WebGL
+   framebuffer directly (gl.readPixels(), not a compressed screenshot),
+   projected each of the 10 camera-nearest cells' own bottom-rim circles
+   into screen space, and sampled a small vertical strip around every
+   projected silhouette point (10,557 total samples) for any anomalously
+   bright pixel. Found zero anomalies in this repro attempt. Also found
+   and noted a real, separate, narrow issue while doing this: the local
+   Browser-pane test environment's WebGL canvas appears capped at a fixed
+   300x150 internal resolution regardless of the emulated viewport size
+   (1600x800 requested via resize_window had no effect on canvas.width/
+   height) -- camera.aspect was also found to read back as null before
+   being manually corrected for the projection math in this diagnostic
+   script; whether this same low-resolution ceiling exists in the user's
+   own real desktop Chrome (where the artifact is actually seen) is
+   unknown and was not something this round's tooling could determine.
+
+Net result: the objective pixel scan found nothing at the resolution this
+environment could render at, but a real, previously-unmeasured 2.675-unit
+gap between button and ground was newly confirmed to exist, which is a
+concrete, mechanically-plausible candidate for a grazing-angle-only
+artifact independent of both the disproven winding theory and a hole in
+the mesh. This is a real behavior/positioning question (should
+groundPositionY be coupled to where buttons actually sit, so there's no
+real gap regardless of viewing angle?) rather than a confirmed bug fix --
+surfaced to the user for a decision before changing how cells attach to
+groundPositionY, since that's a real scene-layout behavior change, not
+purely a bug patch. No code change made this round; temporary debug hooks
+(window.__debugGeo, window.__debugGround) added and removed within the
+round, confirmed via `git diff` to leave zero net change to index.html.
+
+[Shape: read-only investigation building directly on the prior round's
+disproven-normals-theory finding; Files: 0 (temporary debug hooks only,
+net-zero diff) + 1 CHANGELOG entry; Research: none beyond direct
+WebGL/geometry inspection via live debug hooks; Confidence: MEDIUM going
+in given the exact reproduction data provided, resolved to a new concrete
+candidate mechanism (the real button-to-ground gap) rather than a
+confirmed root cause]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
