@@ -1732,6 +1732,118 @@ position, and a right-click-drag (pan attempt) correctly does nothing.
 Committed as 96cbccd and pushed.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 02:47 PM - 03:24 PM EDT (37m09s)
+
+User reported 3 things plus 3 follow-up requests that arrived mid-turn:
+"Save settings still fails. I provided both key tokens", "i still want to
+be able to pan. Even with an active pan function, the rotate/ zoom can
+still be anchored to the floor plane center", "the white artifact is still
+present" (with a screenshot and their live settings dump) -- then "look
+into Clicko or Hando for the save settngs/ set default camera settings",
+"right clickign on a button sholdnt trigger the button", "provide a Lock
+Camera checkbox".
+
+Save Settings on the deployed site (the real root cause, finally found):
+- This project never had a Vercel serverless save endpoint at all --
+  compared against CLICKO's and HANDO's own api/save-settings.js and
+  confirmed BUTTSONS3D had no api/ folder whatsoever. Only
+  scripts/active/dev_server.py's LOCAL-only POST route existed, which is
+  exactly why Save always failed on the deployed site regardless of the
+  GITHUB_TOKEN/DEV_PANEL_SAVE_SECRET env vars being set -- there was no
+  endpoint on the deployed side to read them at all.
+- Ported api/save-settings.js from HANDO (the most complete of this
+  workspace's near-identical copies -- GET+POST via GitHub's Contents API,
+  GET reading live rather than from the stale last-deployed static file).
+  Wired index.html to send the shared `X-Dev-Panel-Secret` header on POST
+  (reusing the exact workspace-wide anti-abuse token value CLICKO/HANDO/
+  DICKOCLICKO/OKCILCOKCID already embed) and to try GET /api/save-settings
+  before the static-file fallback (avoids the same post-deploy staleness
+  bug those other projects already fixed the same way). Verified locally:
+  the local dev server's do_GET has no route there, correctly 404s, and
+  falls straight through to the static file (unaffected). Added a Vercel
+  setup section to README.md matching CLICKO's/HANDO's own.
+
+Camera pan + anchored rotate/zoom (the literal request, refined from last
+round's guess):
+- Last round disabled OrbitControls' pan outright to keep the pivot fixed.
+  Reported directly that pan should come back, with rotate/zoom still
+  anchored to the floor's center regardless. Re-enabled pan (right-click-
+  drag, and the X/Y/Z position sliders translate position+target together
+  again, like a manual pan) and instead reset controls.target to the
+  floor's exact center at the START of every fresh rotate/zoom gesture --
+  window-capturing pointerdown/wheel listeners (registered on window with
+  capture:true so they run before OrbitControls' own canvas-level
+  listeners, confirmed via the DOM dispatch-order spec rather than
+  assumed) distinguish "starting a rotate/zoom" (reset) from "starting a
+  pan" (leave alone, via e.button===2), and setCameraYawPitch()/
+  setCameraDistance() do the same reset for the Yaw/Pitch/Zoom sliders.
+  Verified live via direct controls.target inspection (a temporary
+  window.__debug hook, removed before commit): pan correctly moves the
+  target away from center; a subsequent left-click (rotate start) or wheel
+  event (zoom) both reset it to the exact floor center every time; a
+  right-click does NOT reset it, preserving the pan.
+
+Right-click no longer presses a button: canvas's own pointerdown press-
+handler had no e.button check at all, so a right-click on a button pressed
+it same as a left-click. Added `if (e.button !== 0) return;` at the top of
+that handler. Confirmed OrbitControls already prevents the browser's
+context menu on its own (verified via a live contextmenu dispatch), so no
+separate suppression was needed.
+
+Lock Camera checkbox (new feature, per direct request): disables
+OrbitControls' mouse/touch response entirely (controls.enabled = false)
+while leaving the camera sliders fully functional -- for framing a shot
+once and then clicking buttons without an accidental drag disturbing it.
+Found and fixed a real bug while wiring it up: renderControl() (which
+builds every dev-panel row) declares its OWN unrelated `var controls` (a
+plain DOM wrapper div used for slider rows) -- via var-hoisting this
+shadows the outer OrbitControls `controls` variable for renderControl's
+ENTIRE body, so a direct `controls.enabled = !checkbox.checked` written
+inside the checkbox's own change handler silently no-oped (writing to a
+<div>, not the real controls object). Caught via live inspection, not
+assumed: monkey-patched a getter/setter onto controls.enabled and
+confirmed zero writes ever occurred on click, before finding the
+shadowing var. Fixed via an applyLockCamera() helper function declared in
+the correct outer scope, called by name from inside renderControl (a
+function reference resolves via its own scope chain, unaffected by the
+caller's local shadowing). Verified: toggling the checkbox now correctly
+flips controls.enabled true/false/true.
+
+White artifact (re-investigated, not newly fixed): confirmed via `git log`
+that the currently-live BUTTON OUTLINES.glb is exactly b474071 -- the SAME
+file this session already verified "completely clean across multiple zoom
+levels" 2 rounds ago. The user now reports the same artifact still visible
+on that identical file. This is consistent with this session's own
+standing conclusion from earlier rounds: individual faces on the baked
+outline shell mesh (bakedOutlineMat) near the base's bottom rim have
+reversed/inconsistent winding, invisible under the FrontSide-only culling
+the inverted-hull technique depends on -- and each round's Blender-side
+"recalculate normals" fix has evidently only been catching whatever was
+visible in that round's own specific test framing, not a full pass across
+the whole mesh, which is why it keeps resurfacing at slightly different
+spots/angles across many re-exports this session. Not re-diagnosed from
+scratch this round (redundant with 2+ prior rounds' already-conclusive
+findings, no code path was touched that could affect this); recommended
+the user do a full Select-All + Recalculate Normals (Outside) in Blender
+across the ENTIRE outline shell mesh, not a per-face patch, since that's
+the only thing that would stop this from recurring piecemeal.
+
+Caught and fixed one self-inflicted mistake before committing: live-testing
+Save Settings and the camera sliders together triggered a real Save click,
+which wrote the in-progress test camera angles into the git-tracked
+settings log. Caught via `git diff` before committing and restored the
+camera fields to their pre-existing committed values, keeping only the
+genuine new `lockCamera` field addition.
+
+Verified: multiple fresh reloads, no console errors beyond the expected
+transient connection-reset retries and the expected local 404 on GET
+/api/save-settings (correct fallback behavior); Save Settings POST
+confirmed 200 OK locally via network-request inspection; Lock Camera
+checkbox toggle confirmed via direct property inspection; pan/rotate/zoom
+pivot behavior confirmed via direct controls.target inspection before and
+after each gesture type.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
