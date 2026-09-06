@@ -945,6 +945,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // used to scale extMesh (see its own construction comment: it now shares this exact
   // geometry, not a generic cylinder primitive).
   var NATURAL_EXTERIOR_HEIGHT = 2.00085;
+  // BUTTON_EXTERIOR's own local-space bottom, measured live off its bounding box once
+  // loadButtonModel() resolves (its own local origin isn't quite at its geometric bottom --
+  // small enough on this part, ~-0.038, that it went unnoticed as "real export tolerance"
+  // until the same unaccounted-for offset produced a real, visible gap on the differently-
+  // authored dedicated extension asset below -- see extNaturalMinY's own comment).
+  var NATURAL_EXTERIOR_MIN_Y = null;
   var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null, extension: null };
   // The user's own baked outline shell for each part, extracted from BUTTON OUTLINES.glb and
   // rendered via bakedOutlineMat (see its own construction comment) -- took 2 failed rounds
@@ -954,17 +960,33 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   var outlineGeo = { base: null, exterior: null, unpressed: null, pressed: null, extension: null };
   var modelReady = false;
 
-  // BUTTON_EXTENSION's own authored radius/height, measured live off its actual geometry
-  // (same approach as NATURAL_EXTERIOR_HEIGHT above) once data/BUTTON EXTENSION OUTLINES.glb
-  // loads -- a dedicated connector shape the user modeled and exported separately, replacing
-  // the earlier stand-in of reusing modelGeo.exterior scaled vertically (see updateExtension()
-  // and extMesh's own construction comment, further down, for that prior approach and why
-  // these 3 "active" vars exist: extGeo/extNaturalRadius/extNaturalHeight fall back to the
-  // exterior's own geometry/dimensions if this file fails to load, preserving the old
-  // behavior instead of crashing or producing a zero/NaN-scaled mesh).
+  // BUTTON_EXTENSION's own authored radius/height/bottom, measured live off its actual
+  // geometry (same approach as NATURAL_EXTERIOR_HEIGHT above) once
+  // data/BUTTON EXTENSION OUTLINES.glb loads -- a dedicated connector shape the user modeled
+  // and exported separately, replacing the earlier stand-in of reusing modelGeo.exterior
+  // scaled vertically (see updateExtension() and extMesh's own construction comment, further
+  // down, for that prior approach).
   var NATURAL_EXTENSION_RADIUS = null;
   var NATURAL_EXTENSION_HEIGHT = null;
-  var extGeo = null, extNaturalRadius = NATURAL_EXTERIOR_RADIUS, extNaturalHeight = NATURAL_EXTERIOR_HEIGHT;
+  var NATURAL_EXTENSION_MIN_Y = null;
+  // The "active" extension geometry/dimensions actually used by regenerateGrid()/
+  // updateExtension() -- the dedicated extension asset normally, or modelGeo.exterior's own
+  // values as a fallback if that file fails to load (preserving the old behavior instead of
+  // crashing or producing a zero/NaN-scaled mesh). Resolved once, in Init, only after BOTH
+  // loadButtonModel() and loadExtensionModel() have settled (via Promise.all) -- computing
+  // this inside either loader individually would race, since Promise.all doesn't guarantee
+  // which one's callback runs last.
+  // extNaturalMinY specifically: a part's own local origin isn't guaranteed to sit exactly at
+  // its geometric bottom (bounding-box min Y) -- BUTTON_EXTERIOR's own offset (~-0.038) was
+  // small enough to treat as inconsequential export tolerance and left uncompensated (assumed
+  // 0) in earlier code, but the SAME uncompensated assumption on the differently-authored
+  // dedicated extension asset (whose own offset turned out much larger, measured -0.0762 out
+  // of a ~1.076 total height, ~7% of its own height) left the extension's top short of the
+  // cap's bottom by that same ~7% -- reported directly as a visible gap. Fixed generally, for
+  // both geometries, by actually compensating for whatever this offset measures as, rather
+  // than special-casing the dedicated asset alone: position.y is set below (updateExtension())
+  // to shift the mesh's own local bottom to world y=0, not just its local origin.
+  var extGeo = null, extNaturalRadius = NATURAL_EXTERIOR_RADIUS, extNaturalHeight = NATURAL_EXTERIOR_HEIGHT, extNaturalMinY = 0;
 
   // No rotateX() here, unlike the FBX-era version of this function -- glTF is Y-up BY SPEC
   // (unlike FBX, which the Rhino/Blender export pipeline produced as Z-up), and Blender's
@@ -1064,6 +1086,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
           });
           if (mainInfos.length !== 4) throw new Error("expected 4 main meshes, found " + mainInfos.length);
           var mainRefs = assignMainParts(mainInfos, modelGeo);
+          NATURAL_EXTERIOR_MIN_Y = modelGeo.exterior.boundingBox.min.y;
           if (outlineInfos.length > 0) assignOutlineParts(outlineInfos, mainRefs, outlineGeo);
           if (outlineInfos.length !== 4) {
             console.warn("BUTTON OUTLINES.glb: expected 4 outline shells, found " + outlineInfos.length +
@@ -1085,8 +1108,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // BUTTON OUTLINES.glb -- same "Material_2" prefix = main surface / anything else = outline
   // shell convention as loadButtonModel() above, but with only 1 main mesh expected (no
   // multi-part radius/height sorting needed). Never throws modelReady off: on any failure
-  // here, extGeo/extNaturalRadius/extNaturalHeight (declared above) simply keep their
-  // exterior-borrowing fallback values, so the extension silently reverts to its old
+  // here, modelGeo.extension simply stays null, and Init's Promise.all().then() (where
+  // extGeo/extNaturalRadius/extNaturalHeight/extNaturalMinY actually get resolved) falls
+  // back to the exterior's own values, so the extension silently reverts to its old
   // stand-in appearance instead of the whole scene failing to render.
   function loadExtensionModel() {
     return new Promise(function (resolve) {
@@ -1112,9 +1136,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
           var info = identifyPart(mainGeo);
           NATURAL_EXTENSION_RADIUS = info.radius;
           NATURAL_EXTENSION_HEIGHT = info.height;
-          extGeo = modelGeo.extension;
-          extNaturalRadius = NATURAL_EXTENSION_RADIUS;
-          extNaturalHeight = NATURAL_EXTENSION_HEIGHT;
+          NATURAL_EXTENSION_MIN_Y = mainGeo.boundingBox.min.y;
           if (mains.length && outlines.length) {
             outlineGeo.extension = outlines[0].geo;
             if (outlines.length > 1) {
@@ -1227,26 +1249,30 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return settings.baseHeight * NATURAL_BASE_HEIGHT + cell.currentGain;
   }
 
-  // Spans the extension from the base's own bottom (group-local y=0, same as baseMesh's own
-  // origin) up to the cap's current bottom face -- not just from the base's top. Reported
-  // directly: the extension should reach all the way down to the base's bottom, with the
-  // portion below the base's top simply masked (hidden) inside the base's own opaque
-  // geometry, rather than stopping exactly at the base's top edge. Covers both the
-  // height-gain case (cap rests higher, span grows) and the mid-press case (cap dips
-  // toward/into the base, span shrinks toward the base-bottom-to-0 floor). extMesh now
-  // Uses the dedicated BUTTON_EXTENSION geometry (extGeo -- see its own declaration comment
-  // above for the exterior-borrowing fallback), scaled by span/extNaturalHeight so its
-  // authored shape stretches to exactly fill the gap. Its own local origin sits extremely
-  // close to its bottom already (the exterior-borrowed fallback measured minY -0.038, ~1.9%
-  // of its own height -- real export tolerance rather than something to compensate for,
-  // inconsequential since this whole span is masked inside the base except right at the
-  // very top anyway; not independently re-verified for the dedicated extension geometry,
-  // but the same masking makes a similarly small offset just as inconsequential there).
+  // Spans the extension from the base's own bottom (world y=0, same as baseMesh's own
+  // origin) up to the cap's current bottom face -- not just from the base's top. The
+  // extension should reach all the way down to the base's bottom, with the portion below the
+  // base's top simply masked (hidden) inside the base's own opaque geometry, rather than
+  // stopping exactly at the base's top edge. Covers both the height-gain case (cap rests
+  // higher, span grows) and the mid-press case (cap dips toward/into the base, span shrinks
+  // toward the base-bottom-to-0 floor). Uses extGeo (the dedicated BUTTON_EXTENSION geometry,
+  // or modelGeo.exterior as a fallback -- see extGeo's own declaration comment), scaled by
+  // span/extNaturalHeight so its authored shape stretches to exactly fill the gap.
+  //
+  // position.y compensates for extNaturalMinY (the geometry's own local-space bottom, which
+  // isn't guaranteed to sit at local y=0) so the SCALED geometry's real bottom lands at world
+  // y=0 and its real top lands at exactly world y=span (capBottom), regardless of where the
+  // asset's own origin happens to be. Reported directly as a visible gap between the
+  // extension's top and the cap's bottom on the dedicated extension asset (whose own offset,
+  // -0.0762 out of a ~1.076 total height, is far too large to treat as inconsequential export
+  // tolerance the way the much smaller exterior-borrowed fallback's own offset, ~-0.038, once
+  // was) -- fixed generally for both geometries rather than special-cased to the one asset.
   function updateExtension(cell) {
     var capBottom = cell.capGroup.position.y;
     var span = Math.max(0.0005, capBottom);
-    cell.extMesh.scale.y = span / extNaturalHeight;
-    cell.extMesh.position.y = 0;
+    var scaleY = span / extNaturalHeight;
+    cell.extMesh.scale.y = scaleY;
+    cell.extMesh.position.y = -extNaturalMinY * scaleY;
   }
 
   // Row stagger: alternating (odd rows offset, even rows not) by default, or a growing
@@ -2244,6 +2270,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // modelReady guard until the button model resolves anyway, but calling applyAllSettings()
   // only after everything resolves avoids doing that work twice.)
   Promise.all([loadButtonModel(), loadExtensionModel(), loadSavedDefaults()]).then(function (results) {
+    // Resolved here, only after BOTH model loads have settled, rather than inside either
+    // loader -- see extGeo's own declaration comment for why doing this inside the loaders
+    // individually would race.
+    extGeo = modelGeo.extension || modelGeo.exterior;
+    extNaturalRadius = modelGeo.extension ? NATURAL_EXTENSION_RADIUS : NATURAL_EXTERIOR_RADIUS;
+    extNaturalHeight = modelGeo.extension ? NATURAL_EXTENSION_HEIGHT : NATURAL_EXTERIOR_HEIGHT;
+    extNaturalMinY = modelGeo.extension ? NATURAL_EXTENSION_MIN_Y : NATURAL_EXTERIOR_MIN_Y;
     savedDefaults = results[2];
     settings = deepClone(savedDefaults);
     applyAllSettings();
