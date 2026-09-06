@@ -1844,6 +1844,66 @@ pivot behavior confirmed via direct controls.target inspection before and
 after each gesture type.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 03:30 PM - 03:38 PM EDT (8m03s)
+
+User: "save worked but white artifact still present" -- confirming the
+prior round's Save Settings fix, but the recurring base-bottom-rim
+artifact was still there.
+
+Rather than repeat the same visual hunt-and-eyeball approach that's
+already been tried several times this session with inconsistent results,
+ran a direct geometric diagnostic against the LIVE base outline shell
+mesh (outlineGeo.base, via a temporary debug hook, removed before this
+entry -- confirmed via `git diff` that index.html has zero net changes
+this round): for every one of its 940 triangles, computed the real
+geometric (winding-derived) face normal and compared it against the
+mesh's own AUTHORED vertex-normal attribute (present in the glTF, an
+option this session hadn't actually checked before despite recommending
+Blender-side "recalculate normals" fixes multiple times on the assumption
+of a winding defect).
+
+RESULT: 940/940 faces agree (100%), including all 132 faces in the bottom
+15% of the mesh's own Y-range (the exact rim band the artifact has always
+been reported at). There is NO reversed-winding or inconsistent-normals
+defect in this mesh at all -- direct measurement contradicts this
+session's own standing diagnosis from 3+ earlier rounds. Recalculating
+normals in Blender (the standing recommendation from the last several
+rounds) would very likely do nothing, since the geometry's winding is
+already 100% internally consistent.
+
+Attempted to reproduce the actual visual artifact at the user's exact
+previously-reported camera values (cameraX=2.61, cameraHeight=9.25,
+cameraDistance=-49.10, cameraYaw=-3.04, cameraPitch=-13.66, cameraZoom=
+50.6, matching their own pasted dump) and could NOT get a clean, reliably
+repeatable sighting this round -- one screenshot appeared to show a faint
+sliver, but reverting every changed setting back to its original value
+made it disappear too, and it didn't reappear on a careful re-approach to
+the identical camera position. Tested whether ground color bleeds through
+a possible small mesh coverage gap (switched groundColor to bright green
+as a decisive dye-test) but couldn't catch the artifact again to check
+against it either.
+
+Net result: the standing "reversed normals" theory is now DISPROVEN by
+direct measurement, but the actual cause is not yet identified -- this
+session's own approximate camera-slider reproduction isn't reliably
+matching whatever precise condition (viewport size/aspect ratio, exact
+sub-pixel camera position, or something specific to the user's own device)
+triggers it. Recommended asking the user for a fresh screenshot taken
+together with an immediate Copy Settings dump (so the exact camera state
+at the moment of the screenshot is captured precisely, not approximated)
+rather than continuing to guess camera values -- and stopped further
+open-ended hunting rather than repeating an already-inconclusive method
+(CLAUDE.md 0b).
+
+[Shape: read-only investigation, a genuinely new diagnostic technique
+(authored-normal-vs-geometric-normal comparison) that overturned this
+session's own prior conclusion; Files: 0 (temporary debug hook added and
+removed within the round, net-zero index.html diff) + 1 CHANGELOG entry;
+Research: none beyond direct geometry inspection; Confidence: MEDIUM going
+in, resolved to a decisive negative result on the standing theory but an
+still-open question on the actual cause]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
