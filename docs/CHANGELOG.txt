@@ -2033,6 +2033,69 @@ original artifact's resolution is still pending the user's own check on
 their real desktop browser]
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 04:22 PM - 04:31 PM EDT (9m23s)
+
+User: "not fixed at all. Before we anchored the buttons to the ground
+plane, i had the option of lowering the ground plane away from the
+buttons. Even when they werent touching, the white artifact still showed
+up." Mid-turn: "i think it has to do with backface culling or something."
+
+Reverted the previous round's fix immediately: the user's report directly
+disproves the button-to-ground-gap theory that fix was based on (the
+artifact predates the coupling entirely, reproducible even with the
+ground plane deliberately moved away with no gap-closing coupling in
+place at all). Reverted both changes -- cell groups back to a hardcoded
+Y=0, removed the live-sync in applySetting()'s cfg.groundPos handler --
+restoring the user's own prior workflow of moving the ground independently
+as a diagnostic tool, which the coupling had taken away.
+
+Re-tested the user's own backface-culling hypothesis with 2 further
+checks, extending rather than repeating last round's technique:
+- Ran the authored-normal-vs-geometric-winding consistency check (proven
+  useful 2 rounds ago on the outline shell) against the REAL base,
+  exterior, and extension meshes too -- not just the outline shell.
+  Result: 100% consistent on all three (940/940, 358/358, 32/32
+  triangles), including every triangle in the bottom rim band
+  specifically. No mesh checked so far has any winding defect.
+- Live-tested bakedOutlineMat with THREE.DoubleSide (breaks the whole
+  outline effect scene-wide, matching this session's own already-
+  documented finding -- confirms nothing new about this specific
+  artifact) and with wireframe:true (shows a complete, gap-free
+  triangulation at the bottom rim on both the outline shell and, via the
+  app's own existing debugWireframe checkbox, the real base mesh too --
+  no visible hole in either mesh's geometry).
+- Also realized and corrected a flaw in the PRIOR round's own radial-
+  outward heuristic: the bottom-rim band's faces are mostly near-vertical
+  (chamfer/fillet) rather than side-wall-vertical, so a purely-horizontal
+  "expected outward" test was invalid there from the start -- re-ran
+  filtered to genuine near-horizontal (side-wall) faces only and found
+  zero such faces exist in the bottom band at all, explaining why that
+  earlier heuristic gave a misleading "132/132 inward" reading 2 rounds
+  ago. The authored-normal-vs-geometric-winding test (this round and
+  last) remains the only valid check run so far, and it is unambiguous:
+  100% consistent everywhere checked.
+
+Net result: no structural or winding evidence for backface culling on any
+mesh, geometry, or material state tested this session. Combined with the
+already-disproven ground-gap and reversed-normals theories, 3 concrete
+hypotheses are now ruled out by direct evidence. Given this environment's
+own confirmed low-resolution rendering ceiling (documented 2 rounds ago)
+limits further live visual testing here, asked the user for a tightly
+zoomed/cropped screenshot taken directly on their own real browser (where
+the artifact is actually visible at full resolution) as the next concrete
+step, rather than continuing further blind live experimentation in an
+environment that can't reliably reproduce the defect.
+
+[Shape: revert of a disproven fix (small, mechanical) + further
+investigation extending an already-proven diagnostic technique to
+additional meshes, plus 2 live material-property tests; Files: 1
+(index.html, the revert only -- the investigation half used temporary
+debug hooks confirmed net-zero via `git diff`) + 1 CHANGELOG entry;
+Research: none beyond direct geometry/material inspection; Confidence:
+MEDIUM going in, resolved to a clean revert plus 2 more ruled-out
+hypotheses, actual cause still open]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
