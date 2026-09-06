@@ -678,6 +678,55 @@ baking all 3 fixes into DEFAULT_SETTINGS: no blue/green/pink/purple artifacts
 at any of the flagged junctions.
 
 --------------------------------------------------------------------------------
+2026-09-05 -- 10:25 PM - 10:29 PM EDT
+
+User sent a new annotated screenshot reusing the same 4 arrow colors from the
+immediately preceding round ("outline issues are exactly the same") plus one
+new one: an orange arrow -- the extension's own outline should not show on
+top of either the base or the button.
+
+Fixed the orange-arrow item: removed addOutline(cell, extMesh, "xz")
+entirely. Root cause: the extension now spans the base's full height (0 to
+capBottom, per the previous round's fix), so its puffed-radius outline shell
+now also runs alongside the base's own full height, not just the small
+visible gap -- and pokes past the base's real silhouette wherever the base's
+profile is narrower than extRadius*(1+outlineThickness) at that height. The
+extension is a plain structural gap-filler; the base's top-rim outline and
+the cap's bottom outline already visually frame the seam, so the extension
+never needed its own separate outline.
+
+Investigated the "exactly the same" claim for the other 4 (blue/green/pink/
+purple): re-verified the prior round's fixes from a completely fresh
+localhost tab -- same close 2-button framing as before plus the full default
+14x14 grid -- and found them still clean, matching the prior round's own
+verification exactly. Checked this project's settings-persistence mechanism
+(loadSavedDefaults(), LOCAL_KEY "buttsons3dSettings"): Save Settings writes
+the CURRENT slider values to localStorage, and loadSavedDefaults() prefers
+that saved dump over DEFAULT_SETTINGS for every key it contains (via
+Object.assign), unconditionally, as long as its _schemaVersion still matches
+SETTINGS_SCHEMA_VERSION (currently 3, unchanged all session). Neither of the
+last 2 rounds' default-value changes (outlineThickness, outlineUsePost-
+processing, extensionRadiusMargin) bumped that version, since they didn't
+change a setting's MEANING (the documented bar for a version bump) -- only
+its default value. This means if the user's own browser has an old Save
+Settings snapshot from earlier in this session (a real possibility --
+CLAUDE.md's own §12m "set defaults" workflow documents this project's
+Copy/Save Settings usage pattern), every one of the last 2 rounds' code-level
+default fixes would be silently masked on their end without any error,
+while a fresh/never-saved browser (this session's own verification tab)
+shows them fixed. Did NOT bump SETTINGS_SCHEMA_VERSION preemptively --
+that would also discard any legitimately-customized camera position/grid
+layout the user saved on purpose, which is a real cost this project's own
+documented version-bump policy exists to avoid paying unnecessarily. Flagged
+this to the user directly instead of guessing silently, asking them to check
+their own saved settings / hard-refresh before assuming the code fix itself
+didn't take.
+
+Verified: fresh reload at default settings (14x14 grid) and the exact
+reported 2-button overlap scenario -- no orange/blue/green/pink/purple
+artifacts, no console errors, real click still functions.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

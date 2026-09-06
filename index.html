@@ -1042,7 +1042,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         addOutline(cell, exteriorMesh);
         addOutline(cell, unpressedMesh);
         addOutline(cell, pressedMesh);
-        addOutline(cell, extMesh, "xz"); // radius only -- its own Y already tracks the live gap exactly
+        // extMesh itself gets NO outline -- reported directly as showing on top of both the
+        // base and the button. Used to be a harmless thin sliver when extMesh only spanned
+        // the small base-top-to-cap-bottom gap, but now that it spans all the way down to
+        // the base's own bottom (see updateExtension()'s own comment), its puffed-radius
+        // outline shell runs the extension's full height alongside the base too, and pokes
+        // past the base's real silhouette wherever the base's own profile is narrower than
+        // extRadius*(1+outlineThickness) at that height. The extension is a plain structural
+        // gap-filler, not a part that needs its own visible outline -- the base's top-rim
+        // outline and the cap's bottom outline already visually frame the seam between them.
 
         // Base and cap SWAP which pass they land in by checkerboard parity (not both always
         // going to the same one) -- see the outlinePassA/B construction comment above for why
