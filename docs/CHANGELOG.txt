@@ -1421,6 +1421,15 @@ BUTTON OUTLINES.glb re-export, no reported problem this time. Verified live
 re-exported asset alone, no index.html changes.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 10:15 AM - 10:16 AM EDT (1m13s)
+
+User: "i reexported the glb file. update and push" -- another routine
+BUTTON OUTLINES.glb re-export, no reported problem. Verified live (fresh
+tab): no console errors or warnings, dense 14x14 grid renders correctly
+with baked outlines intact. Committed the re-exported asset alone, no
+index.html changes.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
