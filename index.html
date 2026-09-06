@@ -615,6 +615,23 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return merged;
   }
 
+  // The local dev server (a plain Python http.server subclass, see
+  // scripts/active/dev_server.py) has been observed dropping a request with
+  // net::ERR_CONNECTION_RESET intermittently -- confirmed live, self-resolving on a plain
+  // retry, and reproducible even on a single simple GET/POST with nothing else competing for
+  // the port, which points to something outside this app's own code (OS/antivirus-level
+  // interference with rapid new local connections) rather than a bug in the small always-
+  // reviewed do_POST()/do_GET() handlers themselves. Retrying once, after a short delay,
+  // directly mitigates the actual symptom (a false "Save failed" from a purely transient
+  // blip) without needing to fix or explain the underlying OS-level flakiness.
+  function fetchWithRetry(url, options) {
+    return fetch(url, options).catch(function () {
+      return new Promise(function (resolve) { setTimeout(resolve, 250); }).then(function () {
+        return fetch(url, options);
+      });
+    });
+  }
+
   // Returns a Promise -- under a real server this reads the git-tracked log Save Settings
   // writes to (so a Claude Code session, or a save from another browser/device, is picked
   // up on the next load); file:// has no server to read that log through, so it falls back
@@ -628,7 +645,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         return Promise.resolve(deepClone(DEFAULT_SETTINGS));
       }
     }
-    return fetch(SETTINGS_LOG_URL, { cache: "no-store" })
+    return fetchWithRetry(SETTINGS_LOG_URL, { cache: "no-store" })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(mergeWithDefaults)
       .catch(function () { return deepClone(DEFAULT_SETTINGS); });
@@ -2254,7 +2271,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       }
       return;
     }
-    fetch("/api/save-settings", {
+    fetchWithRetry("/api/save-settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(toSave)

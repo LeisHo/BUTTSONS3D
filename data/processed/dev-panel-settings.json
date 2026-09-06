@@ -24,13 +24,13 @@
   "lightAngleX": -80,
   "lightAngleY": -35,
   "lightAngleZ": -77,
-  "cameraX": 55.59928955667098,
-  "cameraHeight": 15.14598938778419,
-  "cameraDistance": 11.460591026728753,
-  "cameraFov": 10,
-  "cameraYaw": -102.9857963107769,
-  "cameraPitch": -16.983693401753342,
-  "cameraZoom": 58.65228043307386,
+  "cameraX": 13.403734698238864,
+  "cameraHeight": -10.112087747918835,
+  "cameraDistance": -9.07362787038096,
+  "cameraFov": 20,
+  "cameraYaw": -127.05160391458678,
+  "cameraPitch": -41.443985434073404,
+  "cameraZoom": 173.30000000000004,
   "cellShadingEnabled": true,
   "toonBands": 8,
   "toonShadowFloor": 0,
@@ -59,15 +59,15 @@
   "devTextColor": "#e6e6e6",
   "_panelGeometryDesktop": {
     "top": 12,
-    "left": 1236,
+    "left": 980,
     "width": 300,
     "height": 560
   },
   "_panelGeometryMobile": {
-    "top": 12,
-    "left": 423,
-    "width": 300,
-    "height": 560
+    "top": 0,
+    "left": 0,
+    "width": 260,
+    "height": 160
   },
   "_savedCameras": [
     {
@@ -85,6 +85,14 @@
       "cameraDistance": 48.21761575139796,
       "cameraFov": 10,
       "cameraZoom": 79.78904567047564
+    },
+    {
+      "name": "Camera 3",
+      "cameraX": 40.436535483828436,
+      "cameraHeight": 51.1031583541116,
+      "cameraDistance": 43.05494308674555,
+      "cameraFov": 10,
+      "cameraZoom": 233.4
     }
   ],
   "_groupOrder": [
@@ -177,7 +185,6 @@
     "devpanel",
     "button",
     "lighting",
-    "camera",
     "debug",
     "grid"
   ],
