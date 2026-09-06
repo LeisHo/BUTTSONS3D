@@ -682,7 +682,36 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   //    practice the base (wide, low) and a neighboring cell's cap (narrower, sits above its
   //    OWN base) rarely touch in screen space at normal spacing/camera angles the way two
   //    same-type neighbors do -- accepted as the remaining edge case, same spirit as the
-  //    diagonal-touch case already accepted for same-type neighbors.
+  //    diagonal-touch case already accepted for same-type neighbors. Directly reported
+  //    (pink/purple arrows, 2026-09-05) as more visible than "rare" at a dense grid/close
+  //    camera -- this is a hard ceiling of the 2-pass budget, not a bug with a further fix:
+  //    fully separating every touching pair (orthogonal AND diagonal neighbors, base AND cap)
+  //    needs at least 4 independent groups for base alone (a (row%2,col%2) 4-coloring) plus a
+  //    5th/6th for cap, likely more passes than the ~40ms-each fixed overhead can afford
+  //    (see above -- 4 passes already measured "very very laggy"). Not attempted this round.
+  //
+  // KNOWN, UNRESOLVED LIMITATION -- corner artifact where 2 different parts' outlines meet:
+  // reported directly (green arrows, 2026-09-05) as a light/white notch exactly where a cap's
+  // own outline and its base's own outline meet at the shoulder corner. Confirmed real via
+  // live A/B against a lighter ground color (the notch reads as a near-background-color gap,
+  // not a rendering mistake specific to the dark default). Root-caused what it is NOT: not
+  // fixable by raising outlinePassThickness/outlinePassStrength to their max (tested both,
+  // no visible change) -- so it isn't a plain "line too thin" issue; not caused by extMesh's
+  // own gap-filling role either (tried giving the gap a dedicated always-selected helper mesh,
+  // reverted -- OutlinePass ignores invisible objects entirely, and at rest capGroup sits
+  // exactly at baseTop anyway, so there's no real 3D gap there to fill). Most likely cause,
+  // NOT independently confirmed: base and cap are 2 DIFFERENT OutlinePass instances, each
+  // running its own fully independent mask-render -> edge-detect -> blur -> overlay pipeline
+  // with zero awareness of the other's geometry; at the exact screen pixels where their 2
+  // silhouettes are meant to meet seamlessly, 2 separately-rasterized/anti-aliased edges can
+  // leave a sub-pixel gap that no amount of blur radius or strength closes, because there's
+  // nothing to dilate FROM at that exact texel in either pass's own mask. A real fix would
+  // need the seam to be drawn as one continuous edge understood by a single pass, which
+  // conflicts with the checkerboard scheme's whole reason for using 2 passes (giving base and
+  // cap SEPARATE outlines at all -- put them in the same pass and the seam disappears
+  // entirely instead, the original bug this session's 2nd round fixed). Not resolved this
+  // round; the geometry (inverted-hull) outline technique has neither this nor the
+  // cross-instance limitation above, confirmed via live A/B testing 2 rounds prior.
   var composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   function makeOutlinePass() {
@@ -1055,13 +1084,29 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         // Base and cap SWAP which pass they land in by checkerboard parity (not both always
         // going to the same one) -- see the outlinePassA/B construction comment above for why
         // this, not a 3rd/4th pass, is how a cell's own base-to-cap seam is restored without
-        // the lag a real 4-pass split cost.
+        // the lag a real 4-pass split cost. extMesh is deliberately NOT included in either
+        // pass's selectedObjects -- reported directly as a vertical line cutting through the
+        // base's own surface. Root cause: extMesh now spans the base's full height (0 to
+        // capBottom, this session's own earlier fix), and OutlinePass draws every pass's edges
+        // unconditionally (the hidden/visible depth check was removed earlier this session
+        // after it was found to misclassify even a fully unoccluded edge as hidden -- see
+        // makeOutlinePass()'s own comment). With no occlusion check, the cap-pass's OutlinePass
+        // drew extMesh's own silhouette edges (a narrower cylinder than the base) directly on
+        // top of the base's rendered pixels, regardless of the base actually covering it in the
+        // real scene. (A follow-up attempt to give the small base/cap corner its own outline
+        // coverage via a second, invisible "outline-only" helper mesh was tried and reverted --
+        // OutlinePass ignores objects with visible=false entirely, confirmed by scaling one up
+        // 6x with zero effect on screen; and at rest the base/cap gap is ~0 anyway (capGroup
+        // sits exactly at baseTop), so there was no real 3D gap for a helper to fill regardless
+        // -- the corner artifact this was meant to fix is a separate, harder problem, see
+        // makeOutlinePass()'s own comment on the known base/cap corner and cross-instance
+        // limitations of this 2-pass technique.)
         if ((r + c) % 2 === 0) {
           outlineObjectsA.push(baseMesh);
-          outlineObjectsB.push(exteriorMesh, unpressedMesh, pressedMesh, extMesh);
+          outlineObjectsB.push(exteriorMesh, unpressedMesh, pressedMesh);
         } else {
           outlineObjectsB.push(baseMesh);
-          outlineObjectsA.push(exteriorMesh, unpressedMesh, pressedMesh, extMesh);
+          outlineObjectsA.push(exteriorMesh, unpressedMesh, pressedMesh);
         }
 
         cells.push(cell);

@@ -727,6 +727,75 @@ reported 2-button overlap scenario -- no orange/blue/green/pink/purple
 artifacts, no console errors, real click still functions.
 
 --------------------------------------------------------------------------------
+2026-09-05 -- 10:58 PM - 11:17 PM EDT
+
+User corrected the scope of the last 2 rounds' outline work: "im talking
+about the outline pass Screenspace pass one, not the negative hull
+outlines." The last 2 rounds had fixed the geometry (inverted-hull)
+technique, which had since become the default -- but the user's own
+screenshots and complaints were about OutlinePass (screen-space), which
+this project's dev panel checkbox can still switch to. None of those 2
+rounds' fixes touched OutlinePass at all.
+
+Reproduced the reported 2-button overlap scenario specifically with
+outlineUsePostprocessing forced on. Found and fixed a real bug: extMesh
+(the gap-fill extension) is included in OutlinePass's "cap" pass group,
+and since it now spans the base's full height (0 to capBottom, a fix from
+2 rounds ago), and OutlinePass draws every pass's edges unconditionally
+(the hidden/visible depth check was removed earlier this session after
+being found unreliable), the cap-pass's outline drew extMesh's own
+silhouette edges straight through the base's visible surface -- a
+vertical line cutting through the base, matching the reported "base
+outline on top of button" / new orange-arrow-style complaint. Fixed by
+removing extMesh from both outlineObjectsA/B arrays. Confirmed live:
+toggling debugHideExtension off made the lines disappear with the
+extension's solid mesh still correctly hidden inside the base.
+
+Investigated a follow-up regression this fix seemed to reveal: a white/
+light artifact exactly at the base-to-cap shoulder corner, matching the
+green-arrow complaint from 2 rounds ago -- confirmed real via live A/B
+against a lighter ground color. Attempted a targeted fix (a second,
+always-selected-but-invisible "outline helper" mesh spanning just the
+small visible gap) and reverted it after live-testing proved it did
+nothing: OutlinePass ignores objects with visible=false entirely
+(confirmed by scaling one to 6x with zero visible effect), and at rest
+capGroup already sits exactly at baseTop (capBottom - baseTop = ~0), so
+there's no real 3D gap there for a helper to fill regardless. Also ruled
+out "edge too thin/weak" as the cause -- outlinePassThickness and
+outlinePassStrength both tested at their max values with no visible
+change to the notch. Root cause is most likely (not independently
+confirmed) that base and cap are 2 separate OutlinePass instances, each
+running a fully independent mask/edge-detect/blur/overlay pipeline with
+no awareness of the other's geometry -- a sub-pixel gap between 2
+separately-rasterized edges at their shared boundary that no blur radius
+or strength can close, since a pass can't dilate an edge it never
+detected. A real fix would need the seam drawn as one continuous edge by
+a single pass, which conflicts with the whole reason 2 passes exist
+(giving base and cap separate outlines at all).
+
+Documented the cross-instance depth-ordering complaint (pink/purple
+arrows) as the same, already-known, already-accepted 2-pass-budget
+ceiling from 2 rounds ago -- confirmed via live testing to be more
+visible at a dense grid/close camera than originally estimated, but not
+attempted this round: fully separating every touching pair (orthogonal +
+diagonal neighbors, base + cap) needs more independent pass groups than
+the measured ~40ms-per-pass fixed overhead can afford without
+reintroducing the "very very laggy" regression from earlier this
+session.
+
+Net result this round: 1 real, verified bug fixed (extension outline
+through the base). 2 issues (corner white artifact, cross-instance
+depth-ordering) investigated in real depth, ruled out several plausible
+fixes with live evidence, and documented in-code as known architectural
+limitations of the 2-pass OutlinePass technique rather than left
+unexplained -- the geometry (inverted-hull) technique has neither
+limitation, confirmed via this session's own earlier live A/B testing.
+
+Verified: fresh reload, no console errors, real click functions, the
+extension-through-base line is gone in both the reported 2-button overlap
+scenario and the full default grid.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
