@@ -1441,7 +1441,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
         var group = new THREE.Group();
-        group.position.set(c * spacingX - totalW / 2 + rowXOffset(r), 0, r * spacingZ - totalD / 2);
+        // Y = groundPositionY (not a hardcoded 0) -- previously left buttons sitting at world
+        // Y=0 regardless of where the ground plane itself was moved to, a real gap between the
+        // base's own bottom and the ground's actual top surface that only became visible at a
+        // low, near-horizontal viewing angle (reported as a thin bright sliver right at that
+        // seam). Keeping this in sync with live groundPositionY changes (not just at
+        // regeneration time) is applySetting()'s own cfg.groundPos handler's job, below.
+        group.position.set(c * spacingX - totalW / 2 + rowXOffset(r), settings.groundPositionY, r * spacingZ - totalD / 2);
 
         var baseMesh = new THREE.Mesh(modelGeo.base, baseMat);
         baseMesh.scale.set(settings.baseRadius, settings.baseHeight, settings.baseRadius);
@@ -2001,6 +2007,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       // next rotate/zoom recomputes it from the floor's center fresh anyway (see
       // resetPivotToFloor()).
       controls.target.y = settings.groundPositionY;
+      // Keeps every existing cell's group sitting exactly at the ground's actual height too --
+      // regenerateGrid() already builds new cells at this Y (see its own construction comment),
+      // but a live slider drag doesn't trigger a full regen (this slider isn't regen:true, and
+      // shouldn't be -- rebuilding all 196 cells' meshes on every drag tick would be wasteful),
+      // so existing cells need their own direct update here instead.
+      cells.forEach(function (c) { c.group.position.y = settings.groundPositionY; });
     }
     if (cfg.regen && !opts.skipRegen) regenerateGrid();
   }
