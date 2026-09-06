@@ -911,6 +911,56 @@ correctly colored with clean geometry-mode outlines, no console errors,
 real click/press interaction still functions.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 01:26 AM - 01:44 AM EDT
+
+Follow-up to the FBX-era baked-outline investigation (previous entry). User
+asked directly why they still couldn't see their offset emission outline
+(answer: it was deliberately excluded from rendering, per that entry), then
+exported the SAME model as glTF instead and asked to try that, and
+separately asked whether exporting each part as its own file would help.
+
+Switched the loader from FBXLoader to GLTFLoader, pointed at the new
+data/BUTTON OUTLINES.glb. Structural difference from the FBX worth noting:
+glTF split each part into 2 separate MESH objects (e.g. "Object_5_1"/
+"Object_5_2") instead of 1 mesh with 2 material groups -- easier to reason
+about, split here by matching each mesh's own material name against
+"Material_2" (the real surface) rather than relying on the "_1"/"_2"
+naming suffix. Also found and fixed a fresh bug from this format switch:
+glTF is Y-up by spec (Blender's own exporter handles the Z-up-to-Y-up
+conversion automatically), so the FBX-era rotateX(-90deg) call left over
+in extractGeo() was rotating an already-correctly-oriented mesh an extra
+90 degrees, producing a bogus bounding box. Removed it for the glTF path.
+
+Re-tested the baked outline shell rendering with the exact same method as
+the FBX round (child mesh per part, BackSide black material, procedural
+outline disabled to isolate it): identical failure, same parts affected
+(base fine, exterior/cap solid black). This is the important negative
+result -- it rules out "FBX export quirk" as the cause, since 2 unrelated
+export pipelines (FBX and glTF) both faithfully reproduced the same broken
+winding. The problem lives in the outline shell's own mesh data as
+authored in Blender (inconsistent/unrecalculated normals), not in how it
+gets exported -- confirmed this conclusion before answering the "separate
+files" question too: loaded one of the user's new per-part files
+(BUTTONEXTERIOR-OUTLINES.glb) and directly compared its vertex count and
+sampled vertex radii against the combined file's own exterior mesh --
+identical (305 vertices, same ~1.48/1.52 radius pattern both times),
+confirming it's the exact same underlying geometry data just repackaged,
+so splitting into separate files wouldn't have changed anything either.
+Answered that question directly rather than leaving it untested.
+
+Net result unchanged from the FBX round: the new model's shape/colors are
+in use (now via glTF), the baked outline shell is extracted and identified
+but still not rendered, and this project's own existing outline systems
+remain the actual visible outline. Committed the 4 separate per-part glb
+files the user exported alongside the combined one, even though unused by
+code currently, consistent with this project's practice of tracking
+source/export assets rather than leaving them as untracked working-tree
+files.
+
+Verified: fresh reload (new tab) shows the full default grid rendering
+correctly, no console errors, real click still functions.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

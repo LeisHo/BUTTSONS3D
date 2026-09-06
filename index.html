@@ -285,7 +285,7 @@
 </script>
 <script type="module">
 import * as THREE from "three";
-import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -893,114 +893,97 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   var NATURAL_BASE_HEIGHT = 1;
   var NATURAL_EXTERIOR_RADIUS = 1.5; // BUTTON_EXTERIOR's own authored radius
   var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null };
+  // The user's own baked outline shell for each part, extracted from BUTTON OUTLINES.glb but
+  // DELIBERATELY NOT RENDERED -- see loadButtonModel()'s own comment for why. Populated
+  // (all 4, non-null) whenever the file loads successfully; kept around as groundwork for a
+  // future round if the underlying mesh data ever gets fixed, not because anything currently
+  // reads it.
+  var outlineGeo = { base: null, exterior: null, unpressed: null, pressed: null };
   var modelReady = false;
 
-  // BUTTON MODEL WITH OUTLINE.fbx's own baked outline shell (material group 1 on every
-  // part -- see loadButtonModel()'s own comment) is deliberately NOT used for rendering.
-  // Tried live, extensively, before falling back to this: BackSide culling (the same
-  // technique outlineMat above already uses successfully for this project's own procedural
-  // shell) rendered the base correctly as a thin rim, but the exterior/cap came out solid
-  // black almost everywhere -- and even within the exterior alone, its cylindrical side
-  // wall culled correctly while its flat top face did not, isolated with a separate test
-  // material. This means the 4 parts (and even different faces within one part) don't share
-  // one consistent winding/offset convention, so no single side setting fixes all of them.
-  // Given that, extractGeo() below keeps only material group 0 (the real, normal surface)
-  // and drops group 1 entirely, so this new model's shape/geometry gets used (per request)
-  // without shipping a visibly broken baked outline -- the existing, already-reliable
-  // procedural outline systems (outlineMat's inverted-hull technique, or the OutlinePass
-  // screen-space toggle) still provide the actual visible outline, unaffected by this.
+  // No rotateX() here, unlike the FBX-era version of this function -- glTF is Y-up BY SPEC
+  // (unlike FBX, which the Rhino/Blender export pipeline produced as Z-up), and Blender's
+  // own glTF exporter performs that axis conversion automatically. Confirmed live: applying
+  // the FBX-era -90-deg X rotation on top of an already-Y-up glTF mesh produced a visibly
+  // wrong bounding box (X and Y both reading as the ~2.05 radius, Z reading as the ~1
+  // height -- i.e. rotated an extra 90 degrees past correct).
   function extractGeo(mesh) {
     var geo = mesh.geometry.clone();
-    if (geo.groups && geo.groups.length > 1) {
-      var keep = geo.groups.filter(function (g) { return g.materialIndex === 0; });
-      var attrNames = Object.keys(geo.attributes);
-      var newAttrs = {};
-      attrNames.forEach(function (name) {
-        var attr = geo.attributes[name];
-        var itemSize = attr.itemSize;
-        var totalItems = keep.reduce(function (sum, g) { return sum + g.count; }, 0);
-        var arr = new Float32Array(totalItems * itemSize);
-        var offset = 0;
-        keep.forEach(function (g) {
-          for (var i = 0; i < g.count; i++) {
-            for (var k = 0; k < itemSize; k++) {
-              arr[offset * itemSize + k] = attr.getComponent(g.start + i, k);
-            }
-            offset++;
-          }
-        });
-        newAttrs[name] = new THREE.BufferAttribute(arr, itemSize);
-      });
-      var filtered = new THREE.BufferGeometry();
-      Object.keys(newAttrs).forEach(function (name) { filtered.setAttribute(name, newAttrs[name]); });
-      geo = filtered;
-    }
-    geo.rotateX(-Math.PI / 2);
     geo.computeBoundingBox();
     return geo;
   }
 
-  // BUTTON MODEL WITH OUTLINE.fbx (2026-09-06, replacing the original BUTTON MODEL.fbx):
-  // same 4 parts, but the artist added a 2nd, baked outline shell directly into each part's
-  // OWN mesh as a 2nd material slot/face-group (an "outline emission material", per the
-  // user directly) -- NOT 4 separate named objects like the original file. Confirmed live
-  // via FBXLoader before writing any of this: all 4 meshes come through named generically
-  // ("Object_1/3/4/5", not "BUTTON_BASE" etc. -- the descriptive names were lost in this
-  // export), each with geometry.groups splitting its faces across exactly 2 materials
-  // ("Material_2" = the normal colored surface, plus an outline-named one worth noting has
-  // typos as authored: "OUTLINE", "BUTTONOULINE", "OUTLINE INT", "PRESSOUTLINe" --
-  // reproduced verbatim from the FBX, not typos introduced here). Named lookup by string
-  // (root.getObjectByName) is therefore unusable now; parts are identified by bounding-box
-  // radius instead, matched against the SAME NATURAL_BASE_RADIUS/NATURAL_EXTERIOR_RADIUS
-  // constants this file already uses elsewhere (confirmed via live bbox inspection: base's
-  // XZ half-extent ~2.05 vs NATURAL_BASE_RADIUS 2.03125, exterior's ~1.519 vs
-  // NATURAL_EXTERIOR_RADIUS 1.5 -- both match closely). The remaining 2 meshes (the interior
-  // domes, both ~1.06-1.11 XZ half-extent) are told apart by height: the unpressed dome
-  // measured taller (Y range 0-2.101) than the pressed one (0-1.865), consistent with
-  // pressing pushing the dome down/in.
-  // IMPORTANT: measures the ALREADY-ROTATED (Y-up) geometry from extractGeo(), not the raw
-  // FBX mesh -- the source model is authored Z-up, so radius/height on the untransformed
-  // geometry would read the wrong axes entirely (radius in XY instead of XZ, height along Z
-  // instead of Y). Caught live: an earlier version measured the raw mesh and produced a
-  // completely broken (near-solid-black) render, because it silently mismatched every part.
-  function identifyPart(rotatedGeo) {
-    var bb = rotatedGeo.boundingBox;
+  // BUTTON OUTLINES.glb (2026-09-06): the same model, re-exported as glTF instead of FBX,
+  // hoping glTF's stricter spec-mandated winding convention would fix the FBX version's
+  // baked outline shell rendering wrong (BackSide culling worked for the base but not the
+  // exterior, not even consistently within the exterior's own faces). Tested live exactly
+  // like the FBX version (child mesh per part, BackSide black material, procedural outline
+  // disabled to isolate it) -- SAME failure, same parts affected. This rules out "FBX export
+  // quirk" as the cause: since 2 different export formats/pipelines both reproduce the
+  // identical broken result, the winding/normals problem lives in the shell geometry itself
+  // as authored in Blender, not in how it gets exported. A real fix needs the outline
+  // shell's normals recalculated/unified at the source (e.g. Blender's own "Recalculate
+  // Normals" on that geometry) before any re-export, not a different file format. Extracted
+  // and identified here regardless (see outlineGeo above) but not rendered, same as the FBX
+  // version's fallback.
+  //
+  // Structurally different from the FBX too: instead of one mesh per part with 2 material
+  // GROUPS, glTF exported 8 separate MESH objects -- one pair per part, name-suffixed "_1"
+  // (material "Material_2", the real surface) and "_2" (material named after the outline,
+  // e.g. "BUTTONOULINE" -- verbatim from the source, not a typo introduced here). Split by
+  // matching each mesh's OWN material name against "Material_2" rather than relying on the
+  // "_1"/"_2" naming suffix, in case a future export names things differently.
+  //
+  // Parts are still identified by bounding-box radius/height (not name -- descriptive names
+  // are lost in this export too, same as the FBX), matched against the same
+  // NATURAL_BASE_RADIUS/NATURAL_EXTERIOR_RADIUS constants used elsewhere in this file:
+  // widest -> base, 2nd widest -> exterior, remaining 2 (the interior dome pair) split by
+  // height (taller -> unpressed, shorter -> pressed, consistent with pressing pushing the
+  // dome down/in). Takes the geometry from extractGeo(), not the raw mesh straight off the
+  // loader -- the FBX-era version of this integration measured pre-rotation and silently
+  // read the wrong axes; glTF needs no rotation (see extractGeo()'s own comment) but this
+  // still keeps measurement and extraction going through the same single path.
+  function identifyPart(geo) {
+    var bb = geo.boundingBox;
     var radius = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2;
     var height = bb.max.y - bb.min.y;
     return { radius: radius, height: height };
   }
 
+  function assignByRadiusAndHeight(infos, target) {
+    infos.sort(function (a, b) { return b.radius - a.radius; });
+    var baseInfo = infos[0]; // widest -> base
+    var exteriorInfo = infos[1]; // 2nd widest -> exterior
+    var interior = infos.slice(2); // remaining 2 -> the interior dome pair
+    interior.sort(function (a, b) { return b.height - a.height; });
+    target.base = baseInfo.geo;
+    target.exterior = exteriorInfo.geo;
+    target.unpressed = interior[0].geo; // taller -> unpressed
+    target.pressed = interior[1].geo; // shorter -> pressed
+  }
+
   function loadButtonModel() {
     return new Promise(function (resolve) {
-      new FBXLoader().load("data/BUTTON MODEL WITH OUTLINE.fbx", function (obj) {
+      new GLTFLoader().load("data/BUTTON OUTLINES.glb", function (gltf) {
         try {
-          var candidates = [];
-          obj.traverse(function (c) { if (c.isMesh) candidates.push(extractGeo(c)); });
-          if (candidates.length !== 4) throw new Error("expected 4 meshes, found " + candidates.length);
-          var infos = candidates.map(function (geo) {
-            var info = identifyPart(geo);
-            info.geo = geo;
-            return info;
+          var mainInfos = [], outlineInfos = [];
+          gltf.scene.traverse(function (c) {
+            if (!c.isMesh) return;
+            var geo = extractGeo(c);
+            var info = { geo: geo, radius: identifyPart(geo).radius, height: identifyPart(geo).height };
+            var matName = Array.isArray(c.material) ? c.material[0].name : c.material.name;
+            (matName === "Material_2" ? mainInfos : outlineInfos).push(info);
           });
-          infos.sort(function (a, b) { return b.radius - a.radius; });
-          var baseInfo = infos[0]; // widest -> base
-          var exteriorInfo = infos[1]; // 2nd widest -> exterior
-          var interior = infos.slice(2); // remaining 2 -> the interior dome pair
-          interior.sort(function (a, b) { return b.height - a.height; });
-          var unpressedInfo = interior[0]; // taller -> unpressed
-          var pressedInfo = interior[1]; // shorter -> pressed
-
-          modelGeo.base = baseInfo.geo;
-          modelGeo.exterior = exteriorInfo.geo;
-          modelGeo.unpressed = unpressedInfo.geo;
-          modelGeo.pressed = pressedInfo.geo;
+          if (mainInfos.length !== 4) throw new Error("expected 4 main meshes, found " + mainInfos.length);
+          assignByRadiusAndHeight(mainInfos, modelGeo);
+          if (outlineInfos.length === 4) assignByRadiusAndHeight(outlineInfos, outlineGeo);
           modelReady = true;
         } catch (e) {
-          console.error("Failed to process BUTTON MODEL WITH OUTLINE.fbx:", e);
+          console.error("Failed to process BUTTON OUTLINES.glb:", e);
         }
         resolve();
       }, undefined, function (err) {
-        console.error("Failed to load BUTTON MODEL WITH OUTLINE.fbx:", err);
+        console.error("Failed to load BUTTON OUTLINES.glb:", err);
         resolve();
       });
     });
