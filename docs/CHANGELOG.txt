@@ -1395,6 +1395,23 @@ dense default 14x14 grid both render correctly with no seams, gaps, or
 artifacts at the extension/exterior boundary.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 08:55 AM - 09:00 AM EDT (4m14s)
+
+User: "i didnt mean to remove outlines. i reexported. fix it" -- the previous
+round's re-export had dropped all 5 baked outline shells; the user
+re-exported again with them restored.
+
+No code change needed: loadButtonModel()/assignOutlineParts() already
+handle any outline-shell count generically (0, 2, 4, or 5, whatever a given
+export happens to include) -- this was purely a new asset to verify and
+commit. Verified live: fresh tab shows no outline-count warning at all now
+(all 5 shells present and matched), isolated extension shows a clean baked
+outline ring at both edges, full single-button assembly and the dense
+14x14 grid both render correctly with no console errors. Committed the
+re-exported data/BUTTON OUTLINES.glb alone (no index.html changes this
+round).
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
