@@ -1561,6 +1561,58 @@ no console errors. Committed and pushed the re-export with a note that it
 appears to resolve the diagnosed issue.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 12:09 PM - 12:40 PM EDT (30m54s across 3 items)
+
+User reported 3 things in one message: (1) a screenshot showing the
+white-sliver artifact is STILL present in 1 spot after the prior round's
+fix, (2) "Save Settings button doesn't work. it says Save Failed," and
+(3) a full Copy-Settings JSON dump with "Set as defaults."
+
+(2) Save Settings fix: found the local dev server process listening on
+port 8938 had been running continuously since 2026-09-03 01:59 AM --
+BEFORE the 2026-09-03 05:09 AM commit that added no-cache response headers
+to dev_server.py, meaning it had been silently serving without that fix (and
+whatever else changed) for 3 days across this entire session's testing.
+Restarted it (killed the stale PID, launched a fresh instance on the same
+port). Verified Save Settings succeeds (real 200 POST) both immediately
+before and after the restart -- could not reproduce an actual failure
+either way, so the exact trigger for the user's "Save Failed" remains
+unconfirmed, but serving 3-day-stale code was a real, worth-fixing problem
+regardless, and Save is now confirmed working on the fresh instance.
+
+(3) Set defaults from the pasted dump (CLAUDE.md 12m): compared the paste
+field-by-field against the current git-tracked settings log. Every field
+that differed (colSpacing, rowSpacing, groundPositionY/Color, all 6 camera
+fields, outlineEnabled, _collapsedGroups order) differed from both the
+prior default AND the log with no evidence of an intervening other-device
+change, so the paste's own value wins throughout, per the merge rule.
+Wrote the merged result directly to data/processed/dev-panel-settings.json
+(bypassing the UI, since reproducing every field via manual slider edits
+first would have been far more error-prone) and verified the written
+file's values load correctly on reload (X/Y Spacing sliders read back
+0.95/0.8 as expected). Committed as e4029ef. Noted honestly, not silently
+fixed: the resulting camera position renders a blank scene on a fresh
+load -- very likely because raw position replay doesn't reconstruct the
+orbit target the same way live mouse-orbit does (an existing, documented
+characteristic of this app's camera system, not a bug introduced by this
+merge), not something in scope to alter without being asked.
+
+(1) White-sliver artifact re-investigation: confirmed the currently-served
+data/BUTTON OUTLINES.glb on disk is exactly the file committed as the fix
+(3d9b1cc, matching mtime). Extensive re-testing across many camera angles/
+zoom levels/ground colors could NOT reproduce the artifact this round --
+since the outline geometry is shared across all 196 button instances, a
+genuine reversed-winding face should appear at the same relative position
+on every instance simultaneously from the right viewing angle (consistent
+with the user's screenshot showing it across 2-3 adjacent buttons at once,
+not one uniquely-broken button), so this is very likely a real, narrow
+viewing-angle window that this round's manual camera hunting simply didn't
+hit. Stopped rather than continuing to hunt indefinitely (diminishing
+returns) -- asked the user for their exact camera position (e.g. via Copy
+Settings) or a fresh screenshot to pinpoint the angle precisely, rather
+than guessing further. Not fixed this round -- still diagnostic.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
