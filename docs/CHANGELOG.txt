@@ -1430,6 +1430,39 @@ with baked outlines intact. Committed the re-exported asset alone, no
 index.html changes.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 10:20 AM - 10:31 AM EDT (in-flight re-export check + new feature; ~9m for the
+feature itself)
+
+User: "i updated it again. reload and push" -- checked the re-exported BUTTON OUTLINES.glb
+and found it byte-identical to what was already committed/pushed (338f03d..7650723's HEAD) --
+nothing to commit, reported honestly rather than creating a no-op commit.
+
+While that check was in flight, user asked (mid-turn): "and in the dev panel, camera grgoup,
+add a 'save to default' setting. Suhc that i can select a saved camera view, then set it as
+default." Added a "Save to Default" button to the Camera group's existing saved-camera-preset
+UI (alongside Save/Use/Delete Camera): selecting a preset and clicking it jumps to that camera
+AND persists it as the app's own default via the same git-tracked settings log Save Settings
+itself writes to -- so a reload/Reset opens directly on that view afterward, without needing
+Use Camera plus a separate full Save Settings click.
+
+Refactored rather than duplicated: applyCameraPreset()/selectedCamera() factor out the "jump
+to this preset" logic Use Camera and Save to Default both need; saveSettingsToDefault()
+factors the existing Save Settings write path (unchanged behavior) so the new button reuses
+the exact same persistence code instead of a second copy.
+
+Verified live: clicked Save to Default after selecting "Camera 2" -- confirmed the POST
+succeeded (200) and the exact selected preset's camera values landed in
+data/processed/dev-panel-settings.json. Reloading then showed a BLANK scene -- investigated
+before assuming a bug in the new code: "Camera 2" turned out to be a pre-existing saved preset
+that itself points at an unproductive view (nothing in frame), unrelated to the new feature --
+Use Camera would show the identical blank view for that same preset. Since this was a live
+test on the git-tracked default (not yet committed), restored the working default via
+`git checkout -- data/processed/dev-panel-settings.json` rather than leaving the test's
+side effect in place. Confirmed the restore brought back the correct 14x14 grid view with no
+console errors. Committed only the index.html feature change -- the settings-log file itself
+was never staged with the bad test value, so no fix-up commit was needed there.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
