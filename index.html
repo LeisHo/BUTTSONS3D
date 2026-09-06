@@ -270,7 +270,7 @@
       <button id="btnSave">Save Settings</button>
       <button id="btnReset">Reset</button>
     </div>
-    <div id="devSaveStatus">Local-only for now -- git-tracked sync not wired up yet for this project.</div>
+    <div id="devSaveStatus">Save writes to data/processed/dev-panel-settings.json (git-tracked) via the local dev server; falls back to browser-local storage when opened as a file.</div>
     <div id="devGroups"></div>
   </div>
 </div>
@@ -581,41 +581,64 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // "independent position, independent target" meaning rather than the new "position
   // translates target together" one.
   var SETTINGS_SCHEMA_VERSION = 3;
-  function loadSavedDefaults() {
-    try {
-      var raw = localStorage.getItem(LOCAL_KEY);
-      if (!raw) return deepClone(DEFAULT_SETTINGS);
-      var parsed = JSON.parse(raw);
-      if (parsed._schemaVersion !== SETTINGS_SCHEMA_VERSION) return deepClone(DEFAULT_SETTINGS);
-      var merged = Object.assign(deepClone(DEFAULT_SETTINGS), parsed);
-      // Backfill only -- a saved dump from before a slider/group existed silently
-      // overwrites _groupOrder/_itemOrderByGroup wholesale via the shallow Object.assign
-      // above (they're nested lists, not scalar values), hiding any newly-added group or
-      // setting entirely even though its value/definition is present. Re-add anything
-      // DEFAULT_SETTINGS has that the saved copy doesn't, preserving the user's own saved
-      // order for everything that already existed.
-      DEFAULT_SETTINGS._groupOrder.forEach(function (groupId) {
-        if (merged._groupOrder.indexOf(groupId) === -1) merged._groupOrder.push(groupId);
-      });
-      Object.keys(DEFAULT_SETTINGS._itemOrderByGroup).forEach(function (groupId) {
-        if (!merged._itemOrderByGroup[groupId]) {
-          merged._itemOrderByGroup[groupId] = DEFAULT_SETTINGS._itemOrderByGroup[groupId].slice();
-          return;
+  // Git-tracked settings log (CLAUDE.md 12l), written by dev_server.py's own
+  // /api/save-settings route -- mirrors the sibling BUTTSONS project's already-proven
+  // read/write pair (its index.html + scripts/active/dev_server.py). No Vercel deployment
+  // exists for this project (local dev server only), so unlike BUTTSONS's own deployed
+  // copy this doesn't need the GitHub-API/token half of 12l, only the local-server half.
+  var SETTINGS_LOG_URL = "/data/processed/dev-panel-settings.json";
+  var isFileProtocol = location.protocol === "file:";
+
+  // Backfill only -- a saved dump from before a slider/group existed silently overwrites
+  // _groupOrder/_itemOrderByGroup wholesale via the shallow Object.assign below (they're
+  // nested lists, not scalar values), hiding any newly-added group or setting entirely even
+  // though its value/definition is present. Re-add anything DEFAULT_SETTINGS has that the
+  // saved copy doesn't, preserving the user's own saved order for everything that already
+  // existed. A missing/schema-mismatched save is discarded entirely (see SETTINGS_SCHEMA_VERSION).
+  function mergeWithDefaults(parsed) {
+    if (!parsed || parsed._schemaVersion !== SETTINGS_SCHEMA_VERSION) return deepClone(DEFAULT_SETTINGS);
+    var merged = Object.assign(deepClone(DEFAULT_SETTINGS), parsed);
+    DEFAULT_SETTINGS._groupOrder.forEach(function (groupId) {
+      if (merged._groupOrder.indexOf(groupId) === -1) merged._groupOrder.push(groupId);
+    });
+    Object.keys(DEFAULT_SETTINGS._itemOrderByGroup).forEach(function (groupId) {
+      if (!merged._itemOrderByGroup[groupId]) {
+        merged._itemOrderByGroup[groupId] = DEFAULT_SETTINGS._itemOrderByGroup[groupId].slice();
+        return;
+      }
+      DEFAULT_SETTINGS._itemOrderByGroup[groupId].forEach(function (key) {
+        if (merged._itemOrderByGroup[groupId].indexOf(key) === -1) {
+          merged._itemOrderByGroup[groupId].push(key);
         }
-        DEFAULT_SETTINGS._itemOrderByGroup[groupId].forEach(function (key) {
-          if (merged._itemOrderByGroup[groupId].indexOf(key) === -1) {
-            merged._itemOrderByGroup[groupId].push(key);
-          }
-        });
       });
-      return merged;
-    } catch (e) {
-      return deepClone(DEFAULT_SETTINGS);
-    }
+    });
+    return merged;
   }
 
-  var savedDefaults = loadSavedDefaults();
-  var settings = deepClone(savedDefaults);
+  // Returns a Promise -- under a real server this reads the git-tracked log Save Settings
+  // writes to (so a Claude Code session, or a save from another browser/device, is picked
+  // up on the next load); file:// has no server to read that log through, so it falls back
+  // to this browser's own localStorage entirely (12l's documented exception).
+  function loadSavedDefaults() {
+    if (isFileProtocol) {
+      try {
+        var raw = localStorage.getItem(LOCAL_KEY);
+        return Promise.resolve(mergeWithDefaults(raw ? JSON.parse(raw) : null));
+      } catch (e) {
+        return Promise.resolve(deepClone(DEFAULT_SETTINGS));
+      }
+    }
+    return fetch(SETTINGS_LOG_URL, { cache: "no-store" })
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(mergeWithDefaults)
+      .catch(function () { return deepClone(DEFAULT_SETTINGS); });
+  }
+
+  // Placeholders until loadSavedDefaults() resolves inside Init's Promise.all (below,
+  // alongside loadButtonModel()) -- applyAllSettings() there refreshes every panel control
+  // from the real values, so building the panel with defaults in the meantime is harmless.
+  var savedDefaults = deepClone(DEFAULT_SETTINGS);
+  var settings = deepClone(DEFAULT_SETTINGS);
 
   var root = document.documentElement;
   var devPanel = document.getElementById("devPanel");
@@ -2086,14 +2109,33 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     var btn = this;
     savePanelGeometry();
     syncCameraSettingsFromLive();
-    try {
-      var toSave = Object.assign({}, settings, { _schemaVersion: SETTINGS_SCHEMA_VERSION });
-      localStorage.setItem(LOCAL_KEY, JSON.stringify(toSave));
-      savedDefaults = deepClone(settings);
-      flashButton(btn, "Saved (local)!");
-    } catch (e) {
-      flashButton(btn, "Save failed");
+    var toSave = Object.assign({}, settings, { _schemaVersion: SETTINGS_SCHEMA_VERSION });
+    // The git-tracked settings log is the only place Save writes to under a real server
+    // (CLAUDE.md 12l) -- no separate localStorage default alongside it there, so "Save
+    // failed" reflects a genuine write failure rather than silently falling back to a local
+    // cache. file:// is the one exception (12l): no server exists to receive the write, so
+    // that mode uses browser-local storage entirely instead of attempting the POST.
+    if (isFileProtocol) {
+      try {
+        localStorage.setItem(LOCAL_KEY, JSON.stringify(toSave));
+        savedDefaults = deepClone(settings);
+        flashButton(btn, "Saved (local)!");
+      } catch (e) {
+        flashButton(btn, "Save failed");
+      }
+      return;
     }
+    fetch("/api/save-settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(toSave)
+    }).then(function (res) {
+      if (!res.ok) throw new Error("save failed");
+      savedDefaults = deepClone(settings);
+      flashButton(btn, "Saved!");
+    }).catch(function () {
+      flashButton(btn, "Save failed");
+    });
   });
 
   document.getElementById("btnReset").addEventListener("click", function () {
@@ -2117,10 +2159,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   initPanelDragResize();
   applyPanelGeometry();
   animate();
-  // Grid/material/camera/light setup waits on the button model finishing its async load
-  // (regenerateGrid() no-ops via its own modelReady guard until then anyway, but calling
-  // applyAllSettings() only after resolve avoids doing that work twice).
-  loadButtonModel().then(function () {
+  // Grid/material/camera/light setup waits on the button model finishing its async load,
+  // and now also on the git-tracked settings log resolving (loadSavedDefaults()) -- the
+  // panel itself already built and is visible with placeholder/default values in the
+  // meantime (buildPanelContent() above), and applyAllSettings() below refreshes every
+  // control from the real resolved settings once both are ready, so nothing needs
+  // rebuilding. (regenerateGrid() also no-ops via its own modelReady guard until the model
+  // resolves anyway, but calling applyAllSettings() only after both resolve avoids doing
+  // that work twice.)
+  Promise.all([loadButtonModel(), loadSavedDefaults()]).then(function (results) {
+    savedDefaults = results[1];
+    settings = deepClone(savedDefaults);
     applyAllSettings();
     var overlay = document.getElementById("loadingOverlay");
     if (overlay) overlay.classList.add("hidden");
