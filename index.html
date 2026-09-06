@@ -1366,12 +1366,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         exteriorMesh.visible = !settings.debugHideExterior;
         extMesh.visible = !settings.debugHideExtension;
         updateInteriorVisibility(cell);
-        // Reported directly: a click only registered on the exterior shell, not on the
-        // interior dome (visible through the exterior's own opening) -- pickCell()'s own
-        // raycast target list only ever included exteriorMesh. Tagging both interior meshes
-        // the same way lets pickCell() hit-test all 3 without caring which one is currently
-        // visible (an invisible mesh sitting where the visible one is just resolves to the
-        // same cell anyway, so there's no need to pick only the currently-shown one).
+        // A click only registered on the exterior shell, not on the interior dome (visible
+        // through the exterior's own opening) or the base -- pickCell()'s own raycast target
+        // list only ever included exteriorMesh. Tagging base/interior the same way lets
+        // pickCell() hit-test all of them without caring which one is currently visible (an
+        // invisible mesh sitting where a visible one is just resolves to the same cell
+        // anyway, so there's no need to pick only the currently-shown one). extMesh is
+        // deliberately NOT tagged -- see pickCell()'s own comment for why: it needs to be a
+        // raycast OCCLUDER (block a click from passing through to whatever cell happens to
+        // sit behind a tall extension) without itself being a valid click TARGET.
+        baseMesh.userData.cell = cell;
         exteriorMesh.userData.cell = cell;
         unpressedMesh.userData.cell = cell;
         pressedMesh.userData.cell = cell;
@@ -1691,12 +1695,22 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointerNDC, camera);
-    // Includes both interior meshes alongside the exterior -- see their own userData.cell
-    // comment for why (a click directly on the interior dome, visible through the
-    // exterior's own opening, previously didn't register at all).
+    // Includes base/interior alongside the exterior -- see their own userData.cell comment
+    // for why (a click directly on the interior dome, visible through the exterior's own
+    // opening, or on the base, previously didn't register at all). extMesh is included too,
+    // but purely as an OCCLUDER, not a pick target: a tall button's extension can visually
+    // sit in front of (closer to the camera than) some OTHER cell's exterior/interior from
+    // certain angles, and extMesh was never part of this raycast at all before -- so a click
+    // aimed at that extension passed straight through it (nothing there to hit) and instead
+    // registered on whatever cell's exterior/interior happened to be next along that same
+    // ray, wrongly growing/pressing a button behind the one actually being clicked. Reported
+    // directly. Since extMesh's own userData.cell is deliberately left unset (see its own
+    // construction site), a nearest-hit ON an extension naturally resolves to
+    // `undefined` below -- correctly blocking the click (no cell registers) instead of either
+    // triggering the wrong cell or falling through to whatever's behind the extension too.
     var pickTargets = [];
     cells.forEach(function (c) {
-      pickTargets.push(c.exteriorMesh, c.unpressedMesh, c.pressedMesh);
+      pickTargets.push(c.baseMesh, c.exteriorMesh, c.unpressedMesh, c.pressedMesh, c.extMesh);
     });
     var hits = raycaster.intersectObjects(pickTargets, false);
     return hits.length ? hits[0].object.userData.cell : null;
