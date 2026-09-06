@@ -31,6 +31,7 @@
   "cameraYaw": -127.05160391458678,
   "cameraPitch": -41.443985434073404,
   "cameraZoom": 173.30000000000004,
+  "lockCamera": false,
   "cellShadingEnabled": true,
   "toonBands": 8,
   "toonShadowFloor": 0,
@@ -150,7 +151,8 @@
       "cameraFov",
       "cameraYaw",
       "cameraPitch",
-      "cameraZoom"
+      "cameraZoom",
+      "lockCamera"
     ],
     "scene": [
       "groundSize",

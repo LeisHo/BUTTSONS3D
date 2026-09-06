@@ -375,6 +375,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     cameraYaw: -124.24047329909014,
     cameraPitch: -40.208239776340264,
     cameraZoom: 200.87152442081072,
+    lockCamera: false,
 
     cellShadingEnabled: true,
     toonBands: 8,
@@ -459,7 +460,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       grid: ["colCount", "rowCount", "colSpacing", "rowSpacing", "rowXOffset", "cumulativeRowOffset"],
       button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "extensionRadiusMargin", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
-      camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
+      camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom", "lockCamera"],
       scene: ["groundSize", "groundPositionY", "groundColor", "baseColor", "buttonColor"],
       shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow", "bakedOutlineThickness"],
       debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior", "debugHideExtension"]
@@ -544,7 +545,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "debugHideBase", label: "Hide Base Model", visibility: true },
     { key: "debugHideExterior", label: "Hide Button Exterior Model", visibility: true },
     { key: "debugHideInterior", label: "Hide Button Interior Model", visibility: true },
-    { key: "debugHideExtension", label: "Hide Extension (Base-to-Button Connector)", visibility: true }
+    { key: "debugHideExtension", label: "Hide Extension (Base-to-Button Connector)", visibility: true },
+    // Disables OrbitControls' mouse/touch response entirely (rotate/pan/zoom all ignored)
+    // while leaving the camera sliders fully functional -- for framing a shot once and then
+    // clicking buttons without an accidental drag disturbing it. See its own lockCamera-flag
+    // handling in applySetting() and the checkbox's own change handler.
+    { key: "lockCamera", label: "Lock Camera", lockCamera: true }
   ];
 
   var COLOR_CONFIG = [
@@ -581,12 +587,24 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // "independent position, independent target" meaning rather than the new "position
   // translates target together" one.
   var SETTINGS_SCHEMA_VERSION = 3;
-  // Git-tracked settings log (CLAUDE.md 12l), written by dev_server.py's own
-  // /api/save-settings route -- mirrors the sibling BUTTSONS project's already-proven
-  // read/write pair (its index.html + scripts/active/dev_server.py). No Vercel deployment
-  // exists for this project (local dev server only), so unlike BUTTSONS's own deployed
-  // copy this doesn't need the GitHub-API/token half of 12l, only the local-server half.
+  // Git-tracked settings log (CLAUDE.md 12l). Two write paths exist depending on how the
+  // page is being served: locally, scripts/active/dev_server.py's own /api/save-settings
+  // POST route writes straight to this file on disk. On the deployed Vercel site, the same
+  // /api/save-settings route is instead a serverless function (api/save-settings.js) that
+  // commits through GitHub's Contents API -- this project had no such function at all until
+  // now, which is why Save Settings always failed on the deployed site regardless of the
+  // GITHUB_TOKEN/DEV_PANEL_SAVE_SECRET env vars being set (see api/save-settings.js's own
+  // header comment, ported from HANDO). SETTINGS_LOG_URL (the same-origin static file) is
+  // still the fallback read path -- see loadSavedDefaults() below for why a GET against
+  // /api/save-settings is tried first.
   var SETTINGS_LOG_URL = "/data/processed/dev-panel-settings.json";
+  // Shared anti-abuse token for /api/save-settings (CLAUDE.md 12l) -- NOT a real secret (it
+  // ships in this public page's source, same as every other client-side value here), just
+  // enough to keep a random visitor from spamming commits to the repo. Must match the
+  // DEV_PANEL_SAVE_SECRET env var set on this project's own Vercel project (see README.md).
+  // Reuses the exact same value CLICKO/HANDO/DICKOCLICKO/OKCILCOKCID already use, since this
+  // is one workspace-wide shared value, not a per-project one.
+  var DEV_PANEL_SAVE_SECRET = "PkrbMti03M6xm3FEThYXa8gGW_08BOGj";
   var isFileProtocol = location.protocol === "file:";
 
   // Backfill only -- a saved dump from before a slider/group existed silently overwrites
@@ -641,6 +659,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // writes to (so a Claude Code session, or a save from another browser/device, is picked
   // up on the next load); file:// has no server to read that log through, so it falls back
   // to this browser's own localStorage entirely (12l's documented exception).
+  //
+  // Tries GET /api/save-settings first: on the deployed Vercel site this reads LIVE from
+  // GitHub's Contents API (api/save-settings.js), so a Save right after a deploy is visible
+  // on the very next reload instead of only reflecting whatever was live at the LAST
+  // deployment (the same static-file staleness bug HANDO/DICKOCLICKO/OKCILCOKCID already
+  // fixed this same way). Locally, dev_server.py has no GET handler on that route at all --
+  // it 404s, and this falls straight through to the static-file fetch below, which is
+  // already correct there (the file it serves IS the live source of truth locally).
   function loadSavedDefaults() {
     if (isFileProtocol) {
       try {
@@ -650,8 +676,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         return Promise.resolve(deepClone(DEFAULT_SETTINGS));
       }
     }
-    return fetchWithRetry(SETTINGS_LOG_URL, { cache: "no-store" })
+    return fetchWithRetry("/api/save-settings", { cache: "no-store" })
       .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (body) {
+        if (body && body.ok && body.settings) return body.settings;
+        return fetchWithRetry(SETTINGS_LOG_URL, { cache: "no-store" })
+          .then(function (res) { return res.ok ? res.json() : null; });
+      })
       .then(mergeWithDefaults)
       .catch(function () { return deepClone(DEFAULT_SETTINGS); });
   }
@@ -688,27 +719,76 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // from. Starting the camera already out at its real default position avoids that entirely.
   camera.position.set(settings.cameraX, settings.cameraHeight, settings.cameraDistance);
 
-  // Mouse orbit/zoom (replaces the old Camera Rotation X/Y/Z sliders entirely --
+  // Mouse orbit/pan/zoom (replaces the old Camera Rotation X/Y/Z sliders entirely --
   // OrbitControls owns the camera's orientation from here on, updating camera.position/
   // .quaternion itself every frame based on drag/wheel input; the X/Y/Z Position sliders
-  // still work too, repositioning the camera -- see applyCameraControl()).
+  // still work too, translating position+target together -- see applyCameraControl()).
   //
-  // controls.target is permanently pinned to the floor plane's own center (X/Z always 0,
-  // matching the grid's own centered construction; Y kept in sync with groundPositionY,
-  // see its own applySetting() handling) -- rotate always orbits around that fixed point
-  // and scroll-zoom always dollies toward/away from it, rather than whatever point panning
-  // last left it at. Reported directly: rotating/zooming after having panned away left the
-  // pivot at an arbitrary drifted location, which is also what made a saved/replayed camera
-  // position (cameraX/Height/Distance alone, with no separately-stored target) land on an
-  // unpredictable, sometimes entirely blank view -- a fixed, known pivot makes that replay
-  // land on the same place every time. enablePan is turned off entirely rather than left on
-  // and fighting this: OrbitControls' own pan moves camera position AND target together by
-  // definition, so any pan would immediately undo the fixed-pivot guarantee this exists for.
+  // controls.target starts at the floor plane's own center (X/Z 0, matching the grid's own
+  // centered construction; Y = groundPositionY) but is NOT permanently pinned there -- pan
+  // (right-click-drag, or the X/Y/Z sliders) is allowed to move it freely, same as any
+  // OrbitControls scene. What IS guaranteed: a rotate or zoom action always starts from the
+  // floor's own center regardless of where panning last left the pivot, via resetPivotToFloor()
+  // called at the START of every fresh rotate/zoom gesture (see the pointerdown/wheel capture
+  // listeners and setCameraYawPitch()/setCameraDistance() below) -- reported directly: after
+  // panning away, rotate/zoom should still be anchored to the floor's actual center, not
+  // wherever the pan left the pivot. This also incidentally keeps a saved/replayed camera
+  // position well-behaved, since cameraYaw/Pitch/Zoom are always computed relative to that
+  // same fixed anchor rather than an arbitrary drifted target.
   var controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, settings.groundPositionY, 0);
-  controls.enablePan = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
+
+  // Sets controls.target back to the floor's actual center -- called at the start of every
+  // rotate/zoom action (never during an active pan) so those two actions are always anchored
+  // there, independent of wherever a prior pan left the pivot.
+  function resetPivotToFloor() {
+    controls.target.set(0, settings.groundPositionY, 0);
+  }
+
+  // A thin wrapper around `controls.enabled` rather than touching it directly from the Lock
+  // Camera checkbox's own handler -- renderControl() (which builds every dev-panel row,
+  // including that checkbox) declares its OWN unrelated `var controls` (a plain DOM wrapper
+  // div for slider rows), which shadows this OrbitControls `controls` for renderControl's
+  // entire body via var-hoisting, silently no-oping any direct `controls.enabled = ...` written
+  // inside it. A same-named function call from inside renderControl still resolves correctly
+  // here, since this function's own scope chain is rooted OUTSIDE renderControl, unaffected by
+  // its local shadowing.
+  function applyLockCamera() {
+    controls.enabled = !settings.lockCamera;
+  }
+
+  // Distinguishes "starting a rotate/zoom" from "starting a pan" so only the former resets
+  // the pivot (see resetPivotToFloor() above). Registered on WINDOW (not canvas) with
+  // capture:true specifically so this runs during the capturing phase, BEFORE OrbitControls'
+  // own pointerdown/wheel listeners (which are attached directly to canvas, and therefore
+  // fire in the "at target" phase, always after any capturing-phase listener on an ancestor
+  // like window) -- confirmed via the DOM event dispatch order, not assumed. Mouse: button 2
+  // is OrbitControls' default PAN button, so that's the only button that does NOT reset.
+  // Touch: only the FIRST finger of a new gesture resets (button is always 0 for touch) --
+  // a 2nd finger joining mid-gesture (OrbitControls' TOUCH.DOLLY_PAN, which conflates pinch-
+  // zoom and 2-finger pan into one gesture) does not re-reset, so an in-progress pan isn't
+  // disturbed; this does mean a 2-finger pinch-zoom's anchor point is whatever the gesture
+  // started with, not re-anchored mid-gesture -- an accepted limitation of that combined
+  // gesture, not fixable without overriding OrbitControls' own touch handling.
+  var activeOrbitPointers = new Set();
+  window.addEventListener("pointerdown", function (e) {
+    if (e.target !== canvas) return;
+    var isNewGesture = activeOrbitPointers.size === 0;
+    activeOrbitPointers.add(e.pointerId);
+    if (!isNewGesture) return;
+    if (e.pointerType === "mouse" && e.button === 2) return; // pan -- don't reset
+    resetPivotToFloor();
+  }, true);
+  function clearOrbitPointer(e) { activeOrbitPointers.delete(e.pointerId); }
+  window.addEventListener("pointerup", clearOrbitPointer, true);
+  window.addEventListener("pointercancel", clearOrbitPointer, true);
+  // Wheel is always a dolly (zoom) in OrbitControls, never pan -- always reset.
+  window.addEventListener("wheel", function (e) {
+    if (e.target !== canvas) return;
+    resetPivotToFloor();
+  }, { capture: true, passive: true });
 
   // Alternate outline technique: a screen-space postprocessing pass instead of the
   // default per-mesh inverted-hull child meshes (CLAUDE.md 12n debug/variant-toggle
@@ -1522,24 +1602,26 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return { yaw: yaw, pitch: pitch, dist: dist };
   }
 
-  // Moves camera.position (NOT controls.target) to the point at the CURRENT distance-from-
-  // target that looks toward target along the new yaw/pitch direction -- an orbit around the
-  // fixed floor-center pivot (see controls' own construction comment) to face that direction,
-  // at the same distance as before (Zoom's own job is changing distance, not this). Previously
-  // moved target instead for a genuine "turn in place" rotation with position held fixed, but
-  // that's exactly the kind of target drift the fixed pivot exists to prevent -- with target
-  // now permanently pinned, achieving a given look direction has to mean moving the camera
-  // around that fixed point instead.
+  // Resets the pivot to the floor's center first (the Yaw/Pitch sliders are the slider
+  // equivalent of mouse-drag rotate, so they're anchored the same way -- see
+  // resetPivotToFloor()'s own comment), THEN moves camera.position (not controls.target) to
+  // the point at the CURRENT distance from that pivot that looks toward it along the new
+  // yaw/pitch direction -- an orbit around the floor's center to face that direction, at the
+  // same distance as before (Zoom's own job is changing distance, not this).
   function setCameraYawPitch(yawDeg, pitchDeg) {
+    resetPivotToFloor();
     var dist = getCameraYawPitch().dist;
     var yaw = yawDeg * Math.PI / 180, pitch = pitchDeg * Math.PI / 180;
     var dir = new THREE.Vector3(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw));
     camera.position.copy(controls.target).addScaledVector(dir, -dist);
   }
 
-  // Moves the camera to an exact distance from controls.target along its CURRENT direction
-  // from that target -- changes zoom without changing which way the camera is looking.
+  // Resets the pivot to the floor's center first (the Zoom slider is the slider equivalent
+  // of scroll-wheel zoom, so it's anchored the same way -- see resetPivotToFloor()'s own
+  // comment), THEN moves the camera to an exact distance from that pivot along its CURRENT
+  // direction from it -- changes zoom without changing which way the camera is looking.
   function setCameraDistance(dist) {
+    resetPivotToFloor();
     var dir = camera.position.clone().sub(controls.target);
     if (dir.lengthSq() < 1e-8) { camera.getWorldDirection(dir); dir.multiplyScalar(-1); }
     camera.position.copy(controls.target).addScaledVector(dir.normalize(), Math.max(0.01, dist));
@@ -1550,12 +1632,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // wholesale boot/regen/preset-restore path above stays a simple absolute set instead).
   function applyCameraControl(key, value) {
     if (key === "cameraX" || key === "cameraHeight" || key === "cameraDistance") {
-      // controls.target is no longer shifted alongside position here -- it stays pinned to
-      // the floor's fixed center (see controls' own construction comment), so repositioning
-      // the camera via these sliders now always re-aims at that same fixed point rather than
-      // preserving whatever direction the camera happened to be looking before.
+      // Translates position AND target together (a manual pan, same spirit as OrbitControls'
+      // own right-click-drag pan) -- preserves whatever direction the camera is looking, just
+      // moves the whole rig. Rotate/Zoom (below) reset the pivot back to the floor's center
+      // on their OWN next use regardless of where this leaves it -- see resetPivotToFloor().
       var axis = key === "cameraX" ? "x" : key === "cameraHeight" ? "y" : "z";
+      var delta = value - camera.position[axis];
       camera.position[axis] = value;
+      controls.target[axis] += delta;
     } else if (key === "cameraYaw") {
       setCameraYawPitch(value, getCameraYawPitch().pitch);
     } else if (key === "cameraPitch") {
@@ -1789,6 +1873,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   }
 
   canvas.addEventListener("pointerdown", function (e) {
+    // Right-click is reserved for OrbitControls' own pan -- it should never also press a
+    // button underneath the cursor. e.button is always 0 for touch, so this only excludes
+    // an actual right mouse click.
+    if (e.button !== 0) return;
     var cell = pickCell(e.clientX, e.clientY);
     if (!cell) return;
     activePointers.set(e.pointerId, { cell: cell, startX: e.clientX, startY: e.clientY, dragging: false });
@@ -1908,8 +1996,10 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     if (cfg.scene) { groundMat.color.set(settings.groundColor); }
     if (cfg.groundPos) {
       ground.position.y = settings.groundPositionY;
-      // Keeps the fixed orbit/zoom pivot (see controls' own construction comment) matching
-      // the floor's actual height whenever it moves, not just at boot.
+      // Keeps the CURRENT pivot's height matching the floor's actual height whenever it
+      // moves -- harmless if a pan has since moved the pivot elsewhere on X/Z, since the
+      // next rotate/zoom recomputes it from the floor's center fresh anyway (see
+      // resetPivotToFloor()).
       controls.target.y = settings.groundPositionY;
     }
     if (cfg.regen && !opts.skipRegen) regenerateGrid();
@@ -1942,6 +2032,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     refreshMaterials();
     regenerateGrid();
     refreshDebugVisibility();
+    applyLockCamera();
   }
 
   function makeValueEditable(cfg, valueEl) {
@@ -1998,6 +2089,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         if (cfg.outline) refreshOutlines();
         if (cfg.visibility) refreshDebugVisibility();
         if (cfg.regen) regenerateGrid();
+        if (cfg.lockCamera) applyLockCamera();
       });
       label.appendChild(checkbox);
       label.appendChild(document.createTextNode(" " + cfg.label));
@@ -2319,14 +2411,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     }
     fetchWithRetry("/api/save-settings", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Dev-Panel-Secret": DEV_PANEL_SAVE_SECRET },
       body: JSON.stringify(toSave)
     }).then(function (res) {
-      if (!res.ok) throw new Error("save failed");
-      savedDefaults = deepClone(settings);
-      flashButton(btn, "Saved!");
-    }).catch(function () {
-      flashButton(btn, "Save failed");
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (!res.ok || body.ok === false) throw new Error(body.error || "save failed");
+        savedDefaults = deepClone(settings);
+        flashButton(btn, "Saved!");
+      });
+    }).catch(function (err) {
+      flashButton(btn, "Save failed" + (err && err.message ? ": " + err.message : ""));
     });
   }
 
