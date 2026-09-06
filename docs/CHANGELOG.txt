@@ -1052,6 +1052,74 @@ Verified: fresh tab, default settings, no console errors, real click
 functions.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 03:19 AM - 04:02 AM EDT
+
+4-item round, growing mid-turn: (1) user disliked the runtime baked-outline
+thickness slider's look and re-exported the glTF with the thickness baked
+in directly, asking to just use that; (2) the button extension should share
+BUTTON_EXTERIOR's own geometry, scaled vertically, instead of a generic
+cylinder primitive; (3) a click should register on the interior dome, not
+just the exterior shell; (4) a slider to move the ground plane up/down.
+
+(1) Turned out to already be satisfied: bakedOutlineThickness already
+defaults to 0 (no extra scaling), and no newer file existed on disk yet at
+the time -- confirmed via file timestamps rather than assuming.
+
+(2) extMesh now shares modelGeo.exterior directly (previously a
+CylinderGeometry primitive with its own computed radius). Added
+NATURAL_EXTERIOR_HEIGHT (measured live off the actual geometry, 2.00085)
+so span/NATURAL_EXTERIOR_HEIGHT gives the correct Y-scale; X/Z scale set
+directly from buttonRadius*extensionRadiusMargin (extensionRadiusMargin
+kept as an optional extra multiplier, default 1 = exact match).
+
+(3) pickCell()'s raycast target list only ever included exteriorMesh.
+Tagged unpressedMesh/pressedMesh with the same userData.cell and added
+them to the raycast pool -- an invisible interior mesh sitting where the
+visible one is just resolves to the same cell, so no need to pick only
+the currently-shown one.
+
+(4) Added groundPositionY (default 0, -5 to 5 range) wired directly to
+ground.position.y via a new `groundPos` config flag.
+
+Mid-turn, the user re-exported the glTF twice more while testing was in
+progress, surfacing 2 real, unrelated problems along the way:
+
+- The 2nd re-export changed structure: material names now carry Blender's
+  ".001" collision suffixes (an exact "Material_2" string match broke),
+  and only 2 of 4 parts had outline shells this time instead of 4. Fixed
+  by matching material names by PREFIX instead of exact string, and by
+  rewriting outline-to-part assignment to match each outline shell
+  independently against the 4 already-identified main parts by nearest
+  (radius, height) rather than assuming all 4 (or a specific subset) are
+  present -- handles any combination of missing outline shells correctly,
+  not just "all or nothing."
+
+- That same re-export revealed a real, severe visual break: the interior
+  dome's own top rendered as a solid black fill at DEFAULT settings, not
+  just a thin rim -- visible on every button in the default grid. First
+  suspected the same "xyz"-over-puff issue baseMesh already has a fix
+  for, and tried the identical "xz"-only restriction -- confirmed live
+  this did NOT help at all (identical solid black either way), ruling
+  that theory out. With the procedural outline disabled entirely, the
+  dome's own main surface rendered perfectly once the user recalculated
+  normals in Blender (root-caused and reported back before the fix
+  landed) -- so the remaining problem is the inverted-hull TECHNIQUE
+  itself, not the mesh data: the interior dome is viewed from inside a
+  concave surface (through the exterior's own opening), the opposite of
+  what the BackSide-culled-puffed-shell trick assumes (built for convex
+  surfaces viewed from outside). Fixed by dropping the procedural outline
+  from unpressedMesh/pressedMesh entirely -- the exterior's own outline
+  ring, immediately surrounding the opening, still gives the button a
+  clear silhouette edge.
+
+Verified: fresh tab, default 14x14 grid renders correctly (clean red
+interior domes, no black fill, no console errors), a real click on the
+interior dome registers (confirmed via currentGain changing), the
+extension's isolated shape matches the exterior's own dome profile, the
+ground-height slider visibly moves the ground plane, real click still
+functions with no new console errors.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

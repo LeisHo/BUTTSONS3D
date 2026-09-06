@@ -348,6 +348,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     releaseMs: 50,
 
     groundSize: 160,
+    groundPositionY: 0,
     groundColor: "#22242c",
     baseColor: "#ff0000",
     buttonColor: "#d9363e",
@@ -459,7 +460,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "extensionRadiusMargin", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
-      scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
+      scene: ["groundSize", "groundPositionY", "groundColor", "baseColor", "buttonColor"],
       shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow", "bakedOutlineThickness"],
       debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior", "debugHideExtension"]
     },
@@ -495,6 +496,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "releaseMs", label: "Release Speed", min: 0, max: 1000, step: 10, unit: "(Ms)" },
 
     { key: "groundSize", label: "Ground Plane Size", min: 5, max: 400, step: 1, unit: "(x)", regen: true },
+    { key: "groundPositionY", label: "Ground Plane Height", min: -5, max: 5, step: 0.05, unit: "(x)", groundPos: true },
 
     { key: "ambientIntensity", label: "Ambient Light Intensity", min: 0, max: 2, step: 0.01, unit: "(x)", light: true },
     { key: "directionalIntensity", label: "Directional Light Intensity", min: 0, max: 3, step: 0.01, unit: "(x)", light: true },
@@ -915,6 +917,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   var NATURAL_BASE_RADIUS = 2.03125;
   var NATURAL_BASE_HEIGHT = 1;
   var NATURAL_EXTERIOR_RADIUS = 1.5; // BUTTON_EXTERIOR's own authored radius
+  // BUTTON_EXTERIOR's own authored height, measured live off the actual geometry (2.000852...,
+  // rounded here the same way NATURAL_BASE_RADIUS/NATURAL_EXTERIOR_RADIUS already are) --
+  // used to scale extMesh (see its own construction comment: it now shares this exact
+  // geometry, not a generic cylinder primitive).
+  var NATURAL_EXTERIOR_HEIGHT = 2.00085;
   var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null };
   // The user's own baked outline shell for each part, extracted from BUTTON OUTLINES.glb and
   // rendered via bakedOutlineMat (see its own construction comment) -- took 2 failed rounds
@@ -955,21 +962,26 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   //     and light ground colors, and a real click.
   //
   // Structurally different from the FBX too: instead of one mesh per part with 2 material
-  // GROUPS, glTF exported 8 separate MESH objects -- one pair per part, name-suffixed "_1"
-  // (material "Material_2", the real surface) and "_2" (material named after the outline,
-  // e.g. "BUTTONOULINE" -- verbatim from the source, not a typo introduced here). Split by
-  // matching each mesh's OWN material name against "Material_2" rather than relying on the
-  // "_1"/"_2" naming suffix, in case a future export names things differently.
+  // GROUPS, glTF exports separate MESH objects -- one for the real surface (material name
+  // starting with "Material_2" -- Blender appends ".001"/".002" etc. on a name collision, so
+  // this is matched by PREFIX, not exact string; a 2026-09-06 re-export came through as
+  // "Material_2.001" and broke an earlier exact-match version of this check) and, WHERE
+  // PRESENT, a paired outline shell mesh (material named after the outline, e.g.
+  // "BUTTONOULINE"/"OUTLINE.001" -- verbatim from the source). "Where present" matters: that
+  // same re-export only included outline shells for 2 of the 4 parts (base + exterior), not
+  // all 4 -- handled as a real, expected possibility below, not an error case.
   //
-  // Parts are still identified by bounding-box radius/height (not name -- descriptive names
-  // are lost in this export too, same as the FBX), matched against the same
+  // Main parts are identified by bounding-box radius/height (not name -- descriptive names
+  // are lost in every export seen so far), matched against the same
   // NATURAL_BASE_RADIUS/NATURAL_EXTERIOR_RADIUS constants used elsewhere in this file:
   // widest -> base, 2nd widest -> exterior, remaining 2 (the interior dome pair) split by
   // height (taller -> unpressed, shorter -> pressed, consistent with pressing pushing the
-  // dome down/in). Takes the geometry from extractGeo(), not the raw mesh straight off the
-  // loader -- the FBX-era version of this integration measured pre-rotation and silently
-  // read the wrong axes; glTF needs no rotation (see extractGeo()'s own comment) but this
-  // still keeps measurement and extraction going through the same single path.
+  // dome down/in). Outline shells are matched the same way but against EACH OTHER's radius
+  // is not enough on its own when some are missing (e.g. sorting 2 outline shells by radius
+  // and calling the wider one "base" would be wrong if the 2 present were actually the 2
+  // interior domes) -- so each outline shell is instead matched to whichever of the 4
+  // ALREADY-IDENTIFIED main parts it's closest to in (radius, height), independent of how
+  // many outline shells exist or which parts they belong to.
   function identifyPart(geo) {
     var bb = geo.boundingBox;
     var radius = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2;
@@ -977,7 +989,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return { radius: radius, height: height };
   }
 
-  function assignByRadiusAndHeight(infos, target) {
+  function assignMainParts(infos, target) {
     infos.sort(function (a, b) { return b.radius - a.radius; });
     var baseInfo = infos[0]; // widest -> base
     var exteriorInfo = infos[1]; // 2nd widest -> exterior
@@ -987,6 +999,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     target.exterior = exteriorInfo.geo;
     target.unpressed = interior[0].geo; // taller -> unpressed
     target.pressed = interior[1].geo; // shorter -> pressed
+    return { base: baseInfo, exterior: exteriorInfo, unpressed: interior[0], pressed: interior[1] };
+  }
+
+  function assignOutlineParts(infos, mainRefs, target) {
+    var slots = ["base", "exterior", "unpressed", "pressed"];
+    infos.forEach(function (info) {
+      var bestSlot = null, bestDist = Infinity;
+      slots.forEach(function (slot) {
+        var ref = mainRefs[slot];
+        var dist = Math.abs(info.radius - ref.radius) + Math.abs(info.height - ref.height);
+        if (dist < bestDist) { bestDist = dist; bestSlot = slot; }
+      });
+      target[bestSlot] = info.geo;
+    });
   }
 
   function loadButtonModel() {
@@ -999,11 +1025,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
             var geo = extractGeo(c);
             var info = { geo: geo, radius: identifyPart(geo).radius, height: identifyPart(geo).height };
             var matName = Array.isArray(c.material) ? c.material[0].name : c.material.name;
-            (matName === "Material_2" ? mainInfos : outlineInfos).push(info);
+            (matName.indexOf("Material_2") === 0 ? mainInfos : outlineInfos).push(info);
           });
           if (mainInfos.length !== 4) throw new Error("expected 4 main meshes, found " + mainInfos.length);
-          assignByRadiusAndHeight(mainInfos, modelGeo);
-          if (outlineInfos.length === 4) assignByRadiusAndHeight(outlineInfos, outlineGeo);
+          var mainRefs = assignMainParts(mainInfos, modelGeo);
+          if (outlineInfos.length > 0) assignOutlineParts(outlineInfos, mainRefs, outlineGeo);
+          if (outlineInfos.length !== 4) {
+            console.warn("BUTTON OUTLINES.glb: expected 4 outline shells, found " + outlineInfos.length +
+              " -- baked outline will be missing on whichever part(s) have none.");
+          }
           modelReady = true;
         } catch (e) {
           console.error("Failed to process BUTTON OUTLINES.glb:", e);
@@ -1107,20 +1137,24 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return settings.baseHeight * NATURAL_BASE_HEIGHT + cell.currentGain;
   }
 
-  // Spans the extension cylinder from the base's own bottom (group-local y=0, same as
-  // baseMesh's own origin) up to the cap's current bottom face -- not just from the
-  // base's top. Reported directly: the extension should reach all the way down to the
-  // base's bottom, with the portion below the base's top simply masked (hidden) inside
-  // the base's own opaque geometry, rather than stopping exactly at the base's top edge.
-  // Covers both the height-gain case (cap rests higher, span grows) and the mid-press
-  // case (cap dips toward/into the base, span shrinks toward the base-bottom-to-0 floor).
-  // The cap's own local origin is already at its authored bottom (no half-height
-  // subtraction needed, unlike the old centered placeholder cylinder).
+  // Spans the extension from the base's own bottom (group-local y=0, same as baseMesh's own
+  // origin) up to the cap's current bottom face -- not just from the base's top. Reported
+  // directly: the extension should reach all the way down to the base's bottom, with the
+  // portion below the base's top simply masked (hidden) inside the base's own opaque
+  // geometry, rather than stopping exactly at the base's top edge. Covers both the
+  // height-gain case (cap rests higher, span grows) and the mid-press case (cap dips
+  // toward/into the base, span shrinks toward the base-bottom-to-0 floor). extMesh now
+  // shares BUTTON_EXTERIOR's own geometry (modelGeo.exterior, see its own construction
+  // comment) instead of a generic cylinder primitive, scaled by span/NATURAL_EXTERIOR_HEIGHT
+  // so its authored shape stretches to exactly fill the gap -- its own local origin sits
+  // extremely close to its bottom already (measured minY -0.038, ~1.9% of its own height,
+  // real export tolerance rather than something to compensate for -- inconsequential since
+  // this whole span is masked inside the base except right at the very top anyway).
   function updateExtension(cell) {
     var capBottom = cell.capGroup.position.y;
     var span = Math.max(0.0005, capBottom);
-    cell.extMesh.scale.y = span;
-    cell.extMesh.position.y = span / 2;
+    cell.extMesh.scale.y = span / NATURAL_EXTERIOR_HEIGHT;
+    cell.extMesh.position.y = 0;
   }
 
   // Row stagger: alternating (odd rows offset, even rows not) by default, or a growing
@@ -1149,19 +1183,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     ground.visible = true; // see its own construction-site comment: hidden until this first real regen
     groundMat.color.set(settings.groundColor);
 
-    // Matches BUTTON_EXTERIOR's own diameter exactly (scaled the same way the cap itself is,
-    // via buttonRadius) -- reported directly by the user: "the button extension should be
-    // the same diameter as the button exterior, not the base." An earlier round widened this
-    // by extensionRadiusMargin (a deliberate overhang meant to cover the cap's curved
-    // underside from steep angles) then clamped it to the BASE's radius so it wouldn't
-    // overshoot the base -- but the base is wider than the exterior (NATURAL_BASE_RADIUS
-    // 2.03125 vs NATURAL_EXTERIOR_RADIUS 1.5), so that clamp alone still left the extension
-    // visibly wider than the button itself, exactly the regression reported here.
-    // extensionRadiusMargin now defaults to 1.0 (no widening) so it matches the exterior
-    // exactly by default; the slider still exists for deliberately re-introducing an
-    // overhang later if the under-button-gap trade-off is ever wanted back.
-    var extRadius = settings.buttonRadius * NATURAL_EXTERIOR_RADIUS * settings.extensionRadiusMargin;
-    var extGeo = new THREE.CylinderGeometry(extRadius, extRadius, 1, 24);
+    // extRadiusScale multiplies buttonRadius directly (same scale capGroup itself uses),
+    // rather than computing a separate world-unit radius the way the old generic-cylinder
+    // extGeo needed to -- extMesh now shares BUTTON_EXTERIOR's own geometry (modelGeo.exterior,
+    // see extMesh's own construction comment), so matching the button's diameter exactly is
+    // just "use the same scale," no radius math required. extensionRadiusMargin (default 1,
+    // no widening) is kept as an optional extra multiplier on top, preserving the existing
+    // slider for deliberately re-introducing an overhang later if the under-button-gap
+    // trade-off from an earlier round is ever wanted back.
+    var extRadiusScale = settings.buttonRadius * settings.extensionRadiusMargin;
 
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
@@ -1174,7 +1204,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         var bakedOutlineMeshes = [];
         if (outlineGeo.base) { var bo = new THREE.Mesh(outlineGeo.base, bakedOutlineMat); baseMesh.add(bo); bakedOutlineMeshes.push(bo); }
 
-        var extMesh = new THREE.Mesh(extGeo, buttonMat);
+        // Reported directly: "the button extension geometry should just be the same
+        // geometry as the Button Exterior geometry. just scale it vertically to have the
+        // same effect" -- replacing the old generic CylinderGeometry primitive entirely.
+        // Shares modelGeo.exterior with exteriorMesh itself (same geometry object, cheap --
+        // sharing doesn't clone data, and nothing here mutates the geometry, only this
+        // mesh's own transform). X/Z scale set once here (extRadiusScale only changes via a
+        // regen-triggering settings change, which rebuilds this whole loop anyway); Y scale
+        // and position are updated dynamically every frame by updateExtension() to track the
+        // live base-to-cap span.
+        var extMesh = new THREE.Mesh(modelGeo.exterior, buttonMat);
+        extMesh.scale.x = extRadiusScale;
+        extMesh.scale.z = extRadiusScale;
         group.add(extMesh);
 
         var capGroup = new THREE.Group();
@@ -1203,7 +1244,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         exteriorMesh.visible = !settings.debugHideExterior;
         extMesh.visible = !settings.debugHideExtension;
         updateInteriorVisibility(cell);
+        // Reported directly: a click only registered on the exterior shell, not on the
+        // interior dome (visible through the exterior's own opening) -- pickCell()'s own
+        // raycast target list only ever included exteriorMesh. Tagging both interior meshes
+        // the same way lets pickCell() hit-test all 3 without caring which one is currently
+        // visible (an invisible mesh sitting where the visible one is just resolves to the
+        // same cell anyway, so there's no need to pick only the currently-shown one).
         exteriorMesh.userData.cell = cell;
+        unpressedMesh.userData.cell = cell;
+        pressedMesh.userData.cell = cell;
         capGroup.position.y = capRestY(cell);
         updateExtension(cell);
 
@@ -1215,8 +1264,24 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         // outline showing on top of the button/extension within the same instance group.
         addOutline(cell, baseMesh, "xz");
         addOutline(cell, exteriorMesh);
-        addOutline(cell, unpressedMesh);
-        addOutline(cell, pressedMesh);
+        // unpressedMesh/pressedMesh get NO procedural outline at all -- reported directly
+        // (2026-09-06, after a glTF re-export) as the interior dome's own top rendering as a
+        // solid black fill at default settings. First suspected the same "xyz" over-puff
+        // issue baseMesh above already had a fix for, and tried the same "xz"-only
+        // restriction -- confirmed live this did NOT help at all, identical solid black fill
+        // either way, ruling that theory out. With the procedural outline disabled entirely,
+        // the dome's own MAIN surface renders perfectly (the user's own Blender-side normals
+        // recalculation, done in response to this exact report, fixed the real geometry) --
+        // so the remaining problem is specific to the inverted-hull TECHNIQUE itself, not the
+        // mesh data: this dome is viewed from above through the exterior's own opening, i.e.
+        // from "inside" a concave surface, which is the opposite orientation the BackSide-
+        // culled-puffed-shell trick assumes (built for a CONVEX surface viewed from outside,
+        // where culling naturally leaves only a thin silhouette rim) -- for a concave view,
+        // the puffed shell's "near" side (from the camera) ends up on the wrong side of the
+        // culling test, and the fill covers the whole visible dome instead of just its edge.
+        // Dropping the outline here entirely avoids this without a further per-mesh
+        // workaround; the exterior's own outline ring, immediately surrounding this opening,
+        // still gives the button's visible silhouette a clear edge.
         // extMesh itself gets NO outline -- reported directly as showing on top of both the
         // base and the button. Used to be a harmless thin sliver when extMesh only spanned
         // the small base-top-to-cap-bottom gap, but now that it spans all the way down to
@@ -1483,7 +1548,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     pointerNDC.x = ((clientX - rect.left) / rect.width) * 2 - 1;
     pointerNDC.y = -((clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointerNDC, camera);
-    var hits = raycaster.intersectObjects(cells.map(function (c) { return c.exteriorMesh; }), false);
+    // Includes both interior meshes alongside the exterior -- see their own userData.cell
+    // comment for why (a click directly on the interior dome, visible through the
+    // exterior's own opening, previously didn't register at all).
+    var pickTargets = [];
+    cells.forEach(function (c) {
+      pickTargets.push(c.exteriorMesh, c.unpressedMesh, c.pressedMesh);
+    });
+    var hits = raycaster.intersectObjects(pickTargets, false);
     return hits.length ? hits[0].object.userData.cell : null;
   }
 
@@ -1619,6 +1691,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     if (cfg.material) refreshMaterials();
     if (cfg.outline) refreshOutlines();
     if (cfg.scene) { groundMat.color.set(settings.groundColor); }
+    if (cfg.groundPos) ground.position.y = settings.groundPositionY;
     if (cfg.regen && !opts.skipRegen) regenerateGrid();
   }
 
