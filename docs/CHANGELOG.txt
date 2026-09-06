@@ -2096,6 +2096,73 @@ MEDIUM going in, resolved to a clean revert plus 2 more ruled-out
 hypotheses, actual cause still open]
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 05:06 PM - 05:14 PM EDT (7m17s)
+
+User confirmed the ground-decoupling revert is working (independently
+lowered groundPositionY to -3.65, a real, visible gap now), but reported
+the artifact is STILL present -- and reframed it: "I believe its not a
+white artifact, but its in fact a transparent / see through artifact that
+is showing the ground plane behind it," with a new screenshot (4 arrows,
+same front-row locations) and a matching settings dump.
+
+Ran 2 further, more rigorous checks than any prior round, since "literally
+see-through to the ground" is a stronger, more specific claim than "looks
+white" and deserves a correspondingly more direct test:
+
+1. Mesh topology (boundary-edge) check on the real base mesh: deduped
+   vertices by position (avoiding false positives from glTF's UV-seam
+   vertex duplication) and counted how many triangles share each edge --
+   a genuine hole would show up as unexpected boundary edges (edges used
+   by only 1 triangle) clustered somewhere they shouldn't be. Found 440
+   boundary edges scattered across many different Y levels with no clear
+   single-band clustering -- inconclusive on its own (likely reflects the
+   base's own ridged/fluted surface detail creating legitimate seams
+   rather than a real hole), not pursued further once test 2 gave a much
+   more direct answer.
+
+2. Analytic raycasting sweep (THE decisive test): reproduced the user's
+   exact new camera/ground settings, found the camera-nearest cell, and
+   cast a dense grid of rays (15 rows x 151 columns = 2,265 rays) from
+   the actual camera position through NDC coordinates covering the full
+   area around that cell's bottom-rim silhouette -- checking, for every
+   single ray, whether it hits real geometry (this cell's own base mesh
+   or its outline shell) or skips through to the ground/nothing. This is
+   resolution-independent (an exact 3D intersection test, not a rendered/
+   rasterized pixel sample), so unlike every previous screenshot-based
+   attempt this round is NOT limited by this environment's own display
+   resolution ceiling. RESULT: all 2,265 rays hit this cell's own
+   geometry -- zero misses, zero rays reaching the ground or empty space.
+   No literal hole exists in this tested button's coverage.
+
+Net result: for the specific button tested, there is no analytically-
+detectable gap in its geometry -- ruling out a literal missing-triangle
+hole as the mechanism for at least this instance, using a method immune
+to this environment's screenshot/canvas resolution limitations. Combined
+with the already-ruled-out reversed-normals and ground-gap theories, this
+pushes the likely explanation toward a genuine screen-space rendering
+effect (e.g. anti-aliasing/sub-pixel blending at a thin, curved silhouette
+viewed at a shallow grazing angle) rather than a fixable geometry defect --
+though this is inference, not direct confirmation, since a rasterization-
+level effect wouldn't show up in an analytic ray test either way. Renderer
+already has antialias:true and a capped devicePixelRatio (up to 2x) --
+verified both are already in place, so that specific mitigation isn't
+untried-and-available as a quick fix. No code change made. Re-asked the
+user for a tightly zoomed/cropped screenshot from their own real browser
+(still the most direct way to distinguish "a real but sub-pixel geometry
+gap this test's ray density didn't hit" from "a rendering/AA artifact"),
+since this environment cannot itself display the defect at native
+resolution to test further.
+
+[Shape: read-only investigation, introducing 2 new diagnostic techniques
+(topology/boundary-edge analysis, dense analytic raycasting) neither used
+before this session; Files: 0 (temporary debug hooks added and removed
+within the round, confirmed net-zero via `git diff`) + 1 CHANGELOG entry;
+Research: none beyond direct geometry/raycasting inspection; Confidence:
+MEDIUM going in given the sharper "see-through" reframing, resolved to a
+strong negative result (no hole found) that narrows the remaining
+hypothesis space rather than confirming a specific cause]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
