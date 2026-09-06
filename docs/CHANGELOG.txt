@@ -1670,6 +1670,68 @@ levels with no outline gaps. Committed the re-exported asset alone, no
 index.html changes.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 01:54 PM - 02:27 PM EDT (32m17s)
+
+User: "when i zoom or rotate the camera. set the center of the zoom/ rotate
+the center of the floor plane" -- OrbitControls' pivot (controls.target) was
+drifting away from the floor's actual center during normal use, disorienting
+zoom/rotate.
+
+Fixed the pivot drift (the requested fix):
+- Root cause was 3 separate mechanisms all moving controls.target away from
+  the floor's center: OrbitControls' own built-in pan (right-click-drag,
+  moves position+target together by definition), applyCameraControl()'s
+  position-slider deltas (translated position+target together), and
+  setCameraYawPitch()'s "turn in place" logic (moved target directly to
+  rotate the view). controls.target is now permanently pinned to
+  (0, groundPositionY, 0) -- X/Z always 0, matching the grid's own centered
+  construction; Y kept in sync with groundPositionY both at boot and
+  whenever that setting changes (applySetting()'s groundPos handling).
+  enablePan is turned off entirely (a real, deliberate interaction-behavior
+  change beyond the literal ask -- flagged directly rather than silently
+  shipped, since leaving pan on would immediately undo the fixed-pivot
+  guarantee this exists for). applyCameraControl()'s position sliders and
+  setCameraYawPitch() were both rewritten to move camera.position instead of
+  controls.target, preserving their user-facing effect (reposition / re-aim
+  the camera) while respecting the now-fixed pivot.
+- This also very likely explains the recurring "saved camera renders blank
+  on replay" issue seen repeatedly earlier this session: only
+  cameraX/Height/Distance/FOV/Zoom were ever persisted, never the drifted
+  target, so replaying a saved position against whatever arbitrary target
+  the pivot had drifted to by the time of saving could land the camera
+  looking at nothing. Verified directly: the exact previously-blank saved
+  camera (cameraX=30.03, cameraHeight=8.29, cameraDistance=3.48,
+  groundPositionY=-2.7) now renders a correctly-centered view of the grid on
+  load.
+
+Found and fixed a second, separate bug while live-verifying the pivot fix:
+- Hit a black screen mid-verification that persisted even with the (now
+  correctly-targeted) camera rotated -- ruled out a targeting regression via
+  the console, which showed net::ERR_CONNECTION_RESET / a failed load of
+  BUTTON OUTLINES.glb. loadButtonModel() had zero retry protection against
+  the same intermittent connection-reset issue already mitigated for
+  settings load/save via fetchWithRetry() -- GLTFLoader.load() has no
+  built-in retry, and a failed load silently leaves modelReady false (empty
+  ground plane, easily mistaken for a camera bug, which is exactly what
+  happened here). Restructured loadButtonModel() into an attempt(retriesLeft)/
+  onLoaded(gltf) pair with its own retry loop.
+- Initially implemented with 1 retry (matching fetchWithRetry()'s original
+  design) but a fresh-tab test showed BACK-TO-BACK failures -- the first
+  attempt AND the single retry both hit ERR_CONNECTION_RESET, leaving the
+  model permanently unloaded for that page load. Upgraded both
+  loadButtonModel()'s retry loop and fetchWithRetry() itself from 1 retry to
+  2 (3 attempts total each) for consistency and extra insurance, reasoning
+  this Browser-pane test environment likely has a higher reset rate than the
+  user's own real local browser+server setup (possibly a remote-browser-
+  bridge proxying "localhost").
+
+Verified: multiple fresh tabs after both fixes together -- clean loads, no
+console errors, grid renders correctly and stays centered through zoom and
+rotation even starting from the previously-problematic saved camera
+position, and a right-click-drag (pan attempt) correctly does nothing.
+Committed as 96cbccd and pushed.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
