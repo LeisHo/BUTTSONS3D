@@ -945,14 +945,26 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // used to scale extMesh (see its own construction comment: it now shares this exact
   // geometry, not a generic cylinder primitive).
   var NATURAL_EXTERIOR_HEIGHT = 2.00085;
-  var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null };
+  var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null, extension: null };
   // The user's own baked outline shell for each part, extracted from BUTTON OUTLINES.glb and
   // rendered via bakedOutlineMat (see its own construction comment) -- took 2 failed rounds
   // (FBX, then a first glTF export) before a Blender-side normals recalculation + re-export
   // finally made this usable; see loadButtonModel()'s own comment for the full history.
   // Populated (all 4, non-null) whenever the file loads successfully.
-  var outlineGeo = { base: null, exterior: null, unpressed: null, pressed: null };
+  var outlineGeo = { base: null, exterior: null, unpressed: null, pressed: null, extension: null };
   var modelReady = false;
+
+  // BUTTON_EXTENSION's own authored radius/height, measured live off its actual geometry
+  // (same approach as NATURAL_EXTERIOR_HEIGHT above) once data/BUTTON EXTENSION OUTLINES.glb
+  // loads -- a dedicated connector shape the user modeled and exported separately, replacing
+  // the earlier stand-in of reusing modelGeo.exterior scaled vertically (see updateExtension()
+  // and extMesh's own construction comment, further down, for that prior approach and why
+  // these 3 "active" vars exist: extGeo/extNaturalRadius/extNaturalHeight fall back to the
+  // exterior's own geometry/dimensions if this file fails to load, preserving the old
+  // behavior instead of crashing or producing a zero/NaN-scaled mesh).
+  var NATURAL_EXTENSION_RADIUS = null;
+  var NATURAL_EXTENSION_HEIGHT = null;
+  var extGeo = null, extNaturalRadius = NATURAL_EXTERIOR_RADIUS, extNaturalHeight = NATURAL_EXTERIOR_HEIGHT;
 
   // No rotateX() here, unlike the FBX-era version of this function -- glTF is Y-up BY SPEC
   // (unlike FBX, which the Rhino/Blender export pipeline produced as Z-up), and Blender's
@@ -1069,6 +1081,61 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
+  // A dedicated single-part export (BUTTON_EXTENSION), separate from the combined
+  // BUTTON OUTLINES.glb -- same "Material_2" prefix = main surface / anything else = outline
+  // shell convention as loadButtonModel() above, but with only 1 main mesh expected (no
+  // multi-part radius/height sorting needed). Never throws modelReady off: on any failure
+  // here, extGeo/extNaturalRadius/extNaturalHeight (declared above) simply keep their
+  // exterior-borrowing fallback values, so the extension silently reverts to its old
+  // stand-in appearance instead of the whole scene failing to render.
+  function loadExtensionModel() {
+    return new Promise(function (resolve) {
+      new GLTFLoader().load("data/BUTTON EXTENSION OUTLINES.glb", function (gltf) {
+        try {
+          var meshes = [];
+          gltf.scene.traverse(function (c) {
+            if (!c.isMesh) return;
+            var matName = Array.isArray(c.material) ? c.material[0].name : c.material.name;
+            meshes.push({ geo: extractGeo(c), matName: matName });
+          });
+          if (meshes.length === 0) throw new Error("no meshes found");
+          var mains = meshes.filter(function (m) { return m.matName.indexOf("Material_2") === 0; });
+          var outlines = meshes.filter(function (m) { return m.matName.indexOf("Material_2") !== 0; });
+          // A lone mesh with no "Material_2"-prefixed material to match (e.g. no separate
+          // outline shell was authored/exported) is still usable as the main surface.
+          var mainGeo = mains.length ? mains[0].geo : (meshes.length === 1 ? meshes[0].geo : null);
+          if (!mainGeo) {
+            throw new Error("could not identify the main extension mesh among " + meshes.length +
+              " meshes (material names: " + meshes.map(function (m) { return m.matName; }).join(", ") + ")");
+          }
+          modelGeo.extension = mainGeo;
+          var info = identifyPart(mainGeo);
+          NATURAL_EXTENSION_RADIUS = info.radius;
+          NATURAL_EXTENSION_HEIGHT = info.height;
+          extGeo = modelGeo.extension;
+          extNaturalRadius = NATURAL_EXTENSION_RADIUS;
+          extNaturalHeight = NATURAL_EXTENSION_HEIGHT;
+          if (mains.length && outlines.length) {
+            outlineGeo.extension = outlines[0].geo;
+            if (outlines.length > 1) {
+              console.warn("BUTTON EXTENSION OUTLINES.glb: found " + outlines.length +
+                " outline-shell candidates, using the first.");
+            }
+          } else {
+            console.warn("BUTTON EXTENSION OUTLINES.glb: no separate outline shell found -- " +
+              "the extension will render with no baked outline.");
+          }
+        } catch (e) {
+          console.error("Failed to process BUTTON EXTENSION OUTLINES.glb:", e);
+        }
+        resolve();
+      }, undefined, function (err) {
+        console.error("Failed to load BUTTON EXTENSION OUTLINES.glb:", err);
+        resolve();
+      });
+    });
+  }
+
   function refreshMaterials() {
     baseMat.dispose();
     buttonMat.dispose();
@@ -1167,16 +1234,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // geometry, rather than stopping exactly at the base's top edge. Covers both the
   // height-gain case (cap rests higher, span grows) and the mid-press case (cap dips
   // toward/into the base, span shrinks toward the base-bottom-to-0 floor). extMesh now
-  // shares BUTTON_EXTERIOR's own geometry (modelGeo.exterior, see its own construction
-  // comment) instead of a generic cylinder primitive, scaled by span/NATURAL_EXTERIOR_HEIGHT
-  // so its authored shape stretches to exactly fill the gap -- its own local origin sits
-  // extremely close to its bottom already (measured minY -0.038, ~1.9% of its own height,
-  // real export tolerance rather than something to compensate for -- inconsequential since
-  // this whole span is masked inside the base except right at the very top anyway).
+  // Uses the dedicated BUTTON_EXTENSION geometry (extGeo -- see its own declaration comment
+  // above for the exterior-borrowing fallback), scaled by span/extNaturalHeight so its
+  // authored shape stretches to exactly fill the gap. Its own local origin sits extremely
+  // close to its bottom already (the exterior-borrowed fallback measured minY -0.038, ~1.9%
+  // of its own height -- real export tolerance rather than something to compensate for,
+  // inconsequential since this whole span is masked inside the base except right at the
+  // very top anyway; not independently re-verified for the dedicated extension geometry,
+  // but the same masking makes a similarly small offset just as inconsequential there).
   function updateExtension(cell) {
     var capBottom = cell.capGroup.position.y;
     var span = Math.max(0.0005, capBottom);
-    cell.extMesh.scale.y = span / NATURAL_EXTERIOR_HEIGHT;
+    cell.extMesh.scale.y = span / extNaturalHeight;
     cell.extMesh.position.y = 0;
   }
 
@@ -1206,15 +1275,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     ground.visible = true; // see its own construction-site comment: hidden until this first real regen
     groundMat.color.set(settings.groundColor);
 
-    // extRadiusScale multiplies buttonRadius directly (same scale capGroup itself uses),
-    // rather than computing a separate world-unit radius the way the old generic-cylinder
-    // extGeo needed to -- extMesh now shares BUTTON_EXTERIOR's own geometry (modelGeo.exterior,
-    // see extMesh's own construction comment), so matching the button's diameter exactly is
-    // just "use the same scale," no radius math required. extensionRadiusMargin (default 1,
-    // no widening) is kept as an optional extra multiplier on top, preserving the existing
+    // extRadiusScale multiplies buttonRadius directly (same scale capGroup itself uses) --
+    // the target real-world radius this needs to reach is NATURAL_EXTERIOR_RADIUS *
+    // buttonRadius * extensionRadiusMargin (matching the button's own real diameter exactly,
+    // same target as before extGeo became a dedicated asset). Dividing by extGeo's own
+    // natural radius (extNaturalRadius) below converts that target into the right scale
+    // factor for WHATEVER geometry extGeo actually is -- 1:1 when it's still the old
+    // exterior-borrowing fallback (extNaturalRadius === NATURAL_EXTERIOR_RADIUS cancels out
+    // to the exact same math as before), and correctly re-normalized for the dedicated
+    // BUTTON_EXTENSION asset's own authored radius otherwise. extensionRadiusMargin (default
+    // 1, no widening) is kept as an optional extra multiplier on top, preserving the existing
     // slider for deliberately re-introducing an overhang later if the under-button-gap
     // trade-off from an earlier round is ever wanted back.
-    var extRadiusScale = settings.buttonRadius * settings.extensionRadiusMargin;
+    var extRadiusScale = (NATURAL_EXTERIOR_RADIUS / extNaturalRadius) * settings.buttonRadius * settings.extensionRadiusMargin;
 
     for (var r = 0; r < rows; r++) {
       for (var c = 0; c < cols; c++) {
@@ -1227,26 +1300,27 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         var bakedOutlineMeshes = [];
         if (outlineGeo.base) { var bo = new THREE.Mesh(outlineGeo.base, bakedOutlineMat); baseMesh.add(bo); bakedOutlineMeshes.push(bo); }
 
-        // Reported directly: "the button extension geometry should just be the same
-        // geometry as the Button Exterior geometry. just scale it vertically to have the
-        // same effect" -- replacing the old generic CylinderGeometry primitive entirely.
-        // Shares modelGeo.exterior with exteriorMesh itself (same geometry object, cheap --
-        // sharing doesn't clone data, and nothing here mutates the geometry, only this
-        // mesh's own transform). X/Z scale set once here (extRadiusScale only changes via a
-        // regen-triggering settings change, which rebuilds this whole loop anyway); Y scale
-        // and position are updated dynamically every frame by updateExtension() to track the
-        // live base-to-cap span.
-        var extMesh = new THREE.Mesh(modelGeo.exterior, buttonMat);
+        // Uses extGeo -- the dedicated BUTTON_EXTENSION asset the user modeled and exported
+        // specifically for this connector (data/BUTTON EXTENSION OUTLINES.glb, see
+        // loadExtensionModel()), or modelGeo.exterior as a fallback if that file failed to
+        // load (see extGeo's own declaration comment). X/Z scale set once here (extRadiusScale
+        // only changes via a regen-triggering settings change, which rebuilds this whole loop
+        // anyway); Y scale and position are updated dynamically every frame by
+        // updateExtension() to track the live base-to-cap span.
+        var extMesh = new THREE.Mesh(extGeo, buttonMat);
         extMesh.scale.x = extRadiusScale;
         extMesh.scale.z = extRadiusScale;
         group.add(extMesh);
-        // Reuses outlineGeo.exterior (same shape/offset as exteriorMesh's own outline) since
-        // extMesh shares the exterior's main geometry too. As a child of extMesh it inherits
-        // extMesh's X/Z/Y scale (radius match + live vertical stretch from updateExtension()),
-        // so the shell stretches with the extension automatically. This is the depth-tested
-        // bakedOutlineMat shell (FrontSide, real z-buffer occlusion), not the screen-space
-        // OutlinePass technique, so it isn't subject to that technique's no-occlusion artifacts.
-        if (outlineGeo.exterior) { var extOutline = new THREE.Mesh(outlineGeo.exterior, bakedOutlineMat); extMesh.add(extOutline); bakedOutlineMeshes.push(extOutline); }
+        // The dedicated extension asset's own baked outline shell, when it has one (see
+        // loadExtensionModel()) -- falls back to outlineGeo.exterior only when extGeo ITSELF
+        // is still the exterior fallback (matching shapes), never mismatched onto the real
+        // dedicated extension geometry. As a child of extMesh it inherits extMesh's X/Z/Y
+        // scale (radius match + live vertical stretch from updateExtension()), so the shell
+        // stretches with the extension automatically. This is the depth-tested bakedOutlineMat
+        // shell (FrontSide, real z-buffer occlusion), not the screen-space OutlinePass
+        // technique, so it isn't subject to that technique's no-occlusion artifacts.
+        var extOutlineGeo = modelGeo.extension ? outlineGeo.extension : outlineGeo.exterior;
+        if (extOutlineGeo) { var extOutline = new THREE.Mesh(extOutlineGeo, bakedOutlineMat); extMesh.add(extOutline); bakedOutlineMeshes.push(extOutline); }
 
         var capGroup = new THREE.Group();
         capGroup.scale.set(settings.buttonRadius, settings.buttonHeight, settings.buttonRadius);
@@ -2160,15 +2234,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   applyPanelGeometry();
   animate();
   // Grid/material/camera/light setup waits on the button model finishing its async load,
-  // and now also on the git-tracked settings log resolving (loadSavedDefaults()) -- the
-  // panel itself already built and is visible with placeholder/default values in the
-  // meantime (buildPanelContent() above), and applyAllSettings() below refreshes every
-  // control from the real resolved settings once both are ready, so nothing needs
-  // rebuilding. (regenerateGrid() also no-ops via its own modelReady guard until the model
-  // resolves anyway, but calling applyAllSettings() only after both resolve avoids doing
-  // that work twice.)
-  Promise.all([loadButtonModel(), loadSavedDefaults()]).then(function (results) {
-    savedDefaults = results[1];
+  // the dedicated extension model (loadExtensionModel() -- extGeo/extNaturalRadius/
+  // extNaturalHeight fall back to the exterior's own values on failure, so this never blocks
+  // modelReady or the rest of the scene), and the git-tracked settings log resolving
+  // (loadSavedDefaults()) -- the panel itself already built and is visible with
+  // placeholder/default values in the meantime (buildPanelContent() above), and
+  // applyAllSettings() below refreshes every control from the real resolved settings once
+  // all 3 are ready, so nothing needs rebuilding. (regenerateGrid() also no-ops via its own
+  // modelReady guard until the button model resolves anyway, but calling applyAllSettings()
+  // only after everything resolves avoids doing that work twice.)
+  Promise.all([loadButtonModel(), loadExtensionModel(), loadSavedDefaults()]).then(function (results) {
+    savedDefaults = results[2];
     settings = deepClone(savedDefaults);
     applyAllSettings();
     var overlay = document.getElementById("loadingOverlay");
