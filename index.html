@@ -617,17 +617,22 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   // The local dev server (a plain Python http.server subclass, see
   // scripts/active/dev_server.py) has been observed dropping a request with
-  // net::ERR_CONNECTION_RESET intermittently -- confirmed live, self-resolving on a plain
-  // retry, and reproducible even on a single simple GET/POST with nothing else competing for
-  // the port, which points to something outside this app's own code (OS/antivirus-level
-  // interference with rapid new local connections) rather than a bug in the small always-
-  // reviewed do_POST()/do_GET() handlers themselves. Retrying once, after a short delay,
-  // directly mitigates the actual symptom (a false "Save failed" from a purely transient
-  // blip) without needing to fix or explain the underlying OS-level flakiness.
-  function fetchWithRetry(url, options) {
-    return fetch(url, options).catch(function () {
+  // net::ERR_CONNECTION_RESET intermittently -- confirmed live, reproducible even on a
+  // single simple GET/POST with nothing else competing for the port, which points to
+  // something outside this app's own code (OS/antivirus-level interference with rapid new
+  // local connections, likely worse over whatever remote-browser bridge a hosted dev/preview
+  // environment proxies "localhost" through) rather than a bug in the small always-reviewed
+  // do_POST()/do_GET() handlers themselves. A single retry wasn't always enough on its own --
+  // observed live, back-to-back resets on both the first attempt and one retry -- so this
+  // retries up to twice (3 attempts total, matching loadButtonModel()'s own retry count)
+  // before giving up, directly mitigating the actual symptom (a false "Save failed" from a
+  // transient blip) without needing to fix or explain the underlying flakiness.
+  function fetchWithRetry(url, options, retriesLeft) {
+    if (retriesLeft === undefined) retriesLeft = 2;
+    return fetch(url, options).catch(function (err) {
+      if (retriesLeft <= 0) throw err;
       return new Promise(function (resolve) { setTimeout(resolve, 250); }).then(function () {
-        return fetch(url, options);
+        return fetchWithRetry(url, options, retriesLeft - 1);
       });
     });
   }
@@ -675,23 +680,33 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   scene.background = new THREE.Color(0x14151a);
 
   var camera = new THREE.PerspectiveCamera(settings.cameraFov, window.innerWidth / window.innerHeight, 0.1, 500);
-  // Pre-positioned to exactly match the default cameraX/Height/Distance settings below,
-  // ported from OKCILCOKCID's own construction (camera.position.set(0,0.5,9), matching that
-  // project's own position-slider defaults exactly): applyCameraControl()'s position sliders
-  // translate camera.position AND controls.target together by the delta from the camera's
-  // CURRENT position, so if the camera started at THREE's own (0,0,0) default instead, the
-  // very first settings replay at boot would compute a huge spurious delta and drag
-  // controls.target to be coincident with camera.position -- a real degenerate "looking at
-  // nothing, zero direction" camera. Starting here already at the right spot makes that
-  // first replay's delta genuinely zero, exactly like OKCILCOKCID's own boot sequence.
+  // Pre-positioned to the real default cameraX/Height/Distance settings rather than THREE's
+  // own (0,0,0) default -- controls.target ends up pinned very close to world origin (see
+  // OrbitControls' own construction, below), and a camera starting AT (0,0,0) would sit
+  // coincident (or nearly so) with that target: a real degenerate zero-distance camera that
+  // OrbitControls' internal spherical-coordinate math can't derive a meaningful angle/radius
+  // from. Starting the camera already out at its real default position avoids that entirely.
   camera.position.set(settings.cameraX, settings.cameraHeight, settings.cameraDistance);
 
-  // Mouse orbit/pan/zoom (replaces the old Camera Rotation X/Y/Z sliders entirely --
+  // Mouse orbit/zoom (replaces the old Camera Rotation X/Y/Z sliders entirely --
   // OrbitControls owns the camera's orientation from here on, updating camera.position/
   // .quaternion itself every frame based on drag/wheel input; the X/Y/Z Position sliders
-  // still work too, translating position+target together -- see applyCameraControl()).
+  // still work too, repositioning the camera -- see applyCameraControl()).
+  //
+  // controls.target is permanently pinned to the floor plane's own center (X/Z always 0,
+  // matching the grid's own centered construction; Y kept in sync with groundPositionY,
+  // see its own applySetting() handling) -- rotate always orbits around that fixed point
+  // and scroll-zoom always dollies toward/away from it, rather than whatever point panning
+  // last left it at. Reported directly: rotating/zooming after having panned away left the
+  // pivot at an arbitrary drifted location, which is also what made a saved/replayed camera
+  // position (cameraX/Height/Distance alone, with no separately-stored target) land on an
+  // unpredictable, sometimes entirely blank view -- a fixed, known pivot makes that replay
+  // land on the same place every time. enablePan is turned off entirely rather than left on
+  // and fighting this: OrbitControls' own pan moves camera position AND target together by
+  // definition, so any pan would immediately undo the fixed-pivot guarantee this exists for.
   var controls = new OrbitControls(camera, renderer.domElement);
-  controls.target.set(0, 0, 0);
+  controls.target.set(0, settings.groundPositionY, 0);
+  controls.enablePan = false;
   controls.enableDamping = true;
   controls.dampingFactor = 0.08;
 
@@ -1121,9 +1136,30 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
+  // Retries on load failure (see attempt()'s own comment for the retry count) --
+  // GLTFLoader.load() has no built-in retry, and this exact file has been observed failing
+  // with the same intermittent net::ERR_CONNECTION_RESET as the settings-log fetch and Save
+  // Settings POST (see fetchWithRetry()'s own comment for the full evidence) -- confirmed
+  // live: a fresh tab's very first load can hit this and leave modelReady false (no buttons
+  // ever render, just an empty ground plane -- easy to mistake for a camera/targeting bug
+  // rather than a failed network request, which is exactly what happened investigating this
+  // live).
   function loadButtonModel() {
     return new Promise(function (resolve) {
-      new GLTFLoader().load("data/BUTTON OUTLINES.glb", function (gltf) {
+      // Up to 2 retries (3 attempts total), not just 1 -- observed live, back-to-back
+      // resets on both the first attempt AND a single retry aren't rare enough here to treat
+      // one retry as sufficient insurance on its own.
+      function attempt(retriesLeft) {
+        new GLTFLoader().load("data/BUTTON OUTLINES.glb", onLoaded, undefined, function (err) {
+          if (retriesLeft > 0) {
+            setTimeout(function () { attempt(retriesLeft - 1); }, 250);
+            return;
+          }
+          console.error("Failed to load BUTTON OUTLINES.glb:", err);
+          resolve();
+        });
+      }
+      function onLoaded(gltf) {
         try {
           var mainInfos = [], outlineInfos = [];
           gltf.scene.traverse(function (c) {
@@ -1160,10 +1196,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
           console.error("Failed to process BUTTON OUTLINES.glb:", e);
         }
         resolve();
-      }, undefined, function (err) {
-        console.error("Failed to load BUTTON OUTLINES.glb:", err);
-        resolve();
-      });
+      }
+      attempt(2);
     });
   }
 
@@ -1475,7 +1509,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   // Yaw/pitch describe the LOOK DIRECTION from camera.position to controls.target -- derived
   // from that vector (not stored separately), so mouse-driven changes (OrbitControls' own
-  // right-drag orbits POSITION around a fixed target, which changes this same direction
+  // left-drag orbits POSITION around the fixed target, which changes this same direction
   // vector just as much as moving target would) show up correctly via the live sync below.
   // Ported from OKCILCOKCID -- see that project's own CAMERA group comment for the full
   // "position sliders translate, yaw/pitch rotate" rationale.
@@ -1488,14 +1522,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return { yaw: yaw, pitch: pitch, dist: dist };
   }
 
-  // Moves controls.target (NOT camera.position) to a point at the CURRENT distance-to-target
-  // along the new yaw/pitch -- a genuine "turn in place" rotation, independent of the position
-  // sliders (which move position+target together) and of Zoom (distance preserved exactly).
+  // Moves camera.position (NOT controls.target) to the point at the CURRENT distance-from-
+  // target that looks toward target along the new yaw/pitch direction -- an orbit around the
+  // fixed floor-center pivot (see controls' own construction comment) to face that direction,
+  // at the same distance as before (Zoom's own job is changing distance, not this). Previously
+  // moved target instead for a genuine "turn in place" rotation with position held fixed, but
+  // that's exactly the kind of target drift the fixed pivot exists to prevent -- with target
+  // now permanently pinned, achieving a given look direction has to mean moving the camera
+  // around that fixed point instead.
   function setCameraYawPitch(yawDeg, pitchDeg) {
     var dist = getCameraYawPitch().dist;
     var yaw = yawDeg * Math.PI / 180, pitch = pitchDeg * Math.PI / 180;
     var dir = new THREE.Vector3(Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw));
-    controls.target.copy(camera.position).addScaledVector(dir, dist);
+    camera.position.copy(controls.target).addScaledVector(dir, -dist);
   }
 
   // Moves the camera to an exact distance from controls.target along its CURRENT direction
@@ -1511,10 +1550,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // wholesale boot/regen/preset-restore path above stays a simple absolute set instead).
   function applyCameraControl(key, value) {
     if (key === "cameraX" || key === "cameraHeight" || key === "cameraDistance") {
+      // controls.target is no longer shifted alongside position here -- it stays pinned to
+      // the floor's fixed center (see controls' own construction comment), so repositioning
+      // the camera via these sliders now always re-aims at that same fixed point rather than
+      // preserving whatever direction the camera happened to be looking before.
       var axis = key === "cameraX" ? "x" : key === "cameraHeight" ? "y" : "z";
-      var delta = value - camera.position[axis];
       camera.position[axis] = value;
-      controls.target[axis] += delta;
     } else if (key === "cameraYaw") {
       setCameraYawPitch(value, getCameraYawPitch().pitch);
     } else if (key === "cameraPitch") {
@@ -1865,7 +1906,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     if (cfg.material) refreshMaterials();
     if (cfg.outline) refreshOutlines();
     if (cfg.scene) { groundMat.color.set(settings.groundColor); }
-    if (cfg.groundPos) ground.position.y = settings.groundPositionY;
+    if (cfg.groundPos) {
+      ground.position.y = settings.groundPositionY;
+      // Keeps the fixed orbit/zoom pivot (see controls' own construction comment) matching
+      // the floor's actual height whenever it moves, not just at boot.
+      controls.target.y = settings.groundPositionY;
+    }
     if (cfg.regen && !opts.skipRegen) regenerateGrid();
   }
 
