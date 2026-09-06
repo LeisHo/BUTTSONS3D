@@ -796,6 +796,61 @@ extension-through-base line is gone in both the reported 2-button overlap
 scenario and the full default grid.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 12:03 AM - 12:33 AM EDT
+
+User asked for the OutlinePass pass budget's previous "very very laggy"
+threshold, then requested a concrete experiment: "make it three passes and
+see how that is" (2 was the working ceiling, 4 was rejected as laggy, 3 was
+never actually tried).
+
+Before writing any code, worked out on paper that 3 passes cannot achieve
+full separation of every touching pair -- properly coloring a grid so no
+two orthogonally- or diagonally-adjacent cells share a color needs 4
+colors minimum (basic graph coloring, not a design choice). Told the user
+this upfront so the experiment's expectations were set correctly.
+
+Implemented a 3-way split: cellOutlineColor(r,c) merges the 4 (row%2,
+col%2) parity classes down to 3 slots (the 2 "same-parity" classes --
+both-even, both-odd -- combined into one), with each cell's cap using
+(cellColor+1)%3 so base and cap always land in different passes (same
+guarantee the old 2-pass swap gave, generalized). Added a 3rd OutlinePass
+instance (outlinePassC) and updated the pass-assignment/selection code
+accordingly.
+
+Measured real frame cost with the same gl.finish()-synchronized technique
+documented earlier this session, 3 separate runs of 60 frames each, default
+14x14 grid: 0/1/2/3-pass totals of 7.65/16.4/22.1/29.8ms,
+8.8/21.4/30.0/46.4ms, and 4.9/20.2/29.1/38.0ms. Full 3-pass cost measured
+29.8-46.4ms across runs -- noisier AND substantially lower than the
+~40ms/pass, ~83ms-at-2-passes figures documented earlier this session from
+the same technique. Reported both real numbers honestly rather than
+picking one; the discrepancy's cause (GPU/driver/thermal state, session
+history, etc.) was not independently investigated -- the actual point of
+this experiment was the 3-vs-2 relative comparison, and at this newly-
+measured scale both are far under the old rejected 4-pass figure (124ms).
+
+Verified the diagonal-merge improvement live: checked cellOutlineColor()'s
+prediction by hand (orthogonal same-type neighbors always separated,
+confirmed for all 8 parity transitions; diagonal same-type neighbors fixed
+for exactly half of all cells, per the unavoidable 3-vs-4-colors ceiling)
+against a 4x4 dense grid screenshot -- most buttons now show fully
+separate outlines, with occasional pairs still merging (the predicted,
+mathematically-unavoidable same-parity case) rather than the long
+connected wavy chains reported for the 2-pass version. Also re-checked the
+exact 2-button overlap scenario from 2 rounds ago (pink/purple arrows):
+clean in this specific configuration, though the theoretical base-vs-
+neighbor's-cap collision analysis (4 of 8 orthogonal transitions still
+collide, no better or worse than the 2-pass version -- this change wasn't
+targeted at that case) means it can still surface elsewhere. Documented
+all of this directly in the pass-construction and pass-assignment comments.
+
+Verified: fresh reload (a genuinely new tab, not just a reload, after a
+stray net::ERR_CONNECTION_RESET from an abandoned rAF-based FPS experiment
+turned out to be a stale console entry, not a real fault) -- no console
+errors, real click functions, default Geometry-mode outline unaffected
+(this change only touches the OutlinePass code path).
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

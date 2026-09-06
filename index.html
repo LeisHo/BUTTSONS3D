@@ -664,31 +664,57 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // fixed per-pass overhead, not scene-complexity-driven (measured 4/43/83/124ms for 0/1/2/4
   // enabled passes -- almost exactly linear). A 4-pass version of this fix (base and cap each
   // split into their own checkerboard pair) caused a real, reported "very very laggy"
-  // regression for exactly this reason. So 2 passes total is the perf-driven ceiling here --
-  // every further separation guarantee below has to be encoded into just those 2, not by
-  // adding more.
+  // regression for exactly this reason.
   //
-  // Within that 2-pass budget, regenerateGrid() assigns each cell's meshes by BOTH a
-  // checkerboard color ((row+col)%2) AND a base-vs-cap swap: a cell's base and its own cap
-  // (exterior+interior+extension) always land in DIFFERENT passes, and which pass is which
-  // flips with the checkerboard color. Working through what that guarantees:
+  // 2026-09-06: bumped to 3 passes as a deliberate, measured experiment (user: "make it three
+  // passes and see how that is") -- 2 was the previous ceiling, 4 was confirmed too slow, 3
+  // was never actually measured. Re-measured fresh with this exact change, same gl.finish()
+  // methodology, default 14x14 grid: 3 separate runs of 60 frames each gave per-pass-count
+  // totals of 7.65/16.4/22.1/29.8ms, 8.8/21.4/30.0/46.4ms, and 4.9/20.2/29.1/38.0ms for 0/1/2/3
+  // enabled passes -- i.e. full-3-pass frame cost measured between 29.8ms and 46.4ms across
+  // the 3 runs (real range, not averaged), noticeably noisier AND substantially lower than the
+  // ~40ms/pass, ~83ms-at-2-passes figures documented above from earlier this session. Neither
+  // number is fabricated -- both are real measurements from the same technique on the same
+  // machine, just at different points in the session; the discrepancy itself is not explained
+  // (possibly a different GPU/driver/thermal state, tab history, or something about this
+  // specific build -- not independently investigated further, this experiment's actual point
+  // was the 3-vs-2 comparison, not resolving why the absolute baseline moved). At this newly-
+  // measured scale, 2-pass (~22-30ms) and 3-pass (~30-46ms) are both far under the old
+  // 4-pass figure (124ms) that was reported "very very laggy" -- 3 passes reads as a real,
+  // affordable step up from 2, not a return to the rejected 4-pass regression. IMPORTANT,
+  // worked out on paper before writing any code: 3 passes
+  // CANNOT achieve full separation of every touching pair -- properly coloring a grid so that
+  // no two orthogonally- OR diagonally-adjacent cells share a color needs 4 colors minimum
+  // (a basic graph-coloring fact, not a bug). So this is a partial improvement over 2 passes,
+  // not a complete fix for the known diagonal-merge/cross-instance limitations documented
+  // below and at the pass-assignment site in regenerateGrid().
+  //
+  // Within that pass budget, regenerateGrid() assigns each cell's meshes by a 3-way cellColor
+  // AND a base-vs-cap rotation: a cell's base and its own cap (exterior+interior+extension)
+  // always land in DIFFERENT passes, and which 2 of the 3 passes flips with cellColor. Working
+  // through what that guarantees (worked out by hand, not verified by exhaustive testing of
+  // every cell pair):
   //  - A cell's own base and cap are ALWAYS in different passes -> base-to-cap seam always
   //    renders, satisfying "the button should have its own outline and so should the base."
   //  - Two orthogonally-adjacent cells' SAME-type meshes (base-vs-neighbor's-base, or
-  //    cap-vs-neighbor's-cap) are always in different passes too (opposite checkerboard
-  //    colors) -> the original cross-button row-merging bug stays fixed.
-  //  - The one case NOT separated: a cell's base and its ORTHOGONALLY-ADJACENT NEIGHBOR's cap
-  //    end up in the same pass (the swap uses the same 2 passes for both distinctions). In
-  //    practice the base (wide, low) and a neighboring cell's cap (narrower, sits above its
-  //    OWN base) rarely touch in screen space at normal spacing/camera angles the way two
-  //    same-type neighbors do -- accepted as the remaining edge case, same spirit as the
-  //    diagonal-touch case already accepted for same-type neighbors. Directly reported
-  //    (pink/purple arrows, 2026-09-05) as more visible than "rare" at a dense grid/close
-  //    camera -- this is a hard ceiling of the 2-pass budget, not a bug with a further fix:
-  //    fully separating every touching pair (orthogonal AND diagonal neighbors, base AND cap)
-  //    needs at least 4 independent groups for base alone (a (row%2,col%2) 4-coloring) plus a
-  //    5th/6th for cap, likely more passes than the ~40ms-each fixed overhead can afford
-  //    (see above -- 4 passes already measured "very very laggy"). Not attempted this round.
+  //    cap-vs-neighbor's-cap) are always in different passes too -> the original cross-button
+  //    row-merging bug stays fixed (confirmed true for all 8 orthogonal parity transitions).
+  //  - Diagonally-adjacent cells' SAME-type meshes: FIXED for roughly half of all cells (where
+  //    row%2 != col%2) -- their diagonal neighbors always land in a genuinely different pass.
+  //    STILL MERGED for the other half (where row%2 == col%2, i.e. both-even or both-odd
+  //    cells) -- those diagonal neighbors land in the same pass as before, unchanged from the
+  //    2-pass version. This is the direct, unavoidable consequence of only having 3 colors for
+  //    what needs 4 -- not a partial bug, a fully-understood partial fix.
+  //  - A cell's base vs. an orthogonally-adjacent neighbor's cap (the OTHER known limitation,
+  //    reported directly as pink/purple arrows, 2026-09-05): checked by hand for all 8
+  //    orthogonal parity-transition cases under the new 3-color scheme -- 4 of 8 came out
+  //    separated, 4 did not, no cleaner pattern than "roughly half." Net exposure to this
+  //    specific edge case is NOT meaningfully better or worse than the 2-pass version; this
+  //    change wasn't targeted at it (the diagonal same-type case above, called out directly as
+  //    "much more severe than estimated," was the actual target). Fully separating every
+  //    touching pair (orthogonal AND diagonal, base AND cap, all at once) needs more distinct
+  //    pass groups than 3 -- not attempted, since 4 was already measured "very very laggy" and
+  //    the real number for anything above 3 hasn't been re-measured.
   //
   // KNOWN, UNRESOLVED LIMITATION -- corner artifact where 2 different parts' outlines meet:
   // reported directly (green arrows, 2026-09-05) as a light/white notch exactly where a cap's
@@ -770,7 +796,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   }
   var outlinePassA = makeOutlinePass();
   var outlinePassB = makeOutlinePass();
-  var ALL_OUTLINE_PASSES = [outlinePassA, outlinePassB];
+  var outlinePassC = makeOutlinePass();
+  var ALL_OUTLINE_PASSES = [outlinePassA, outlinePassB, outlinePassC];
   composer.addPass(new OutputPass());
 
   // Directional + ambient light, always both present (no longer tied to the cell-shading
@@ -956,6 +983,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     cell.outlineMeshes.push({ mesh: outlineMesh, axes: axes });
   }
 
+  // 3-way OutlinePass cell coloring (see the outlinePassA/B/C construction comment for the
+  // full derivation). Merges the 4 (row%2, col%2) parity classes down to 3 slots by combining
+  // the 2 "same-parity" classes (both-even, both-odd) into one -- this is the specific choice
+  // that fixes diagonal separation for "mixed-parity" cells while leaving same-parity cells'
+  // diagonal neighbors still merged, as documented above. 0/1/2 are otherwise arbitrary pass
+  // indices, not meaningful on their own.
+  function cellOutlineColor(r, c) {
+    var rowEven = r % 2 === 0, colEven = c % 2 === 0;
+    if (rowEven === colEven) return 0; // both-even or both-odd -- merged class
+    return rowEven ? 1 : 2; // (even,odd) -> 1, (odd,even) -> 2
+  }
+
   var cells = []; // { group, baseMesh, capGroup, exteriorMesh, unpressedMesh, pressedMesh, extMesh, currentGain, pressedAt, pressed, tween }
 
   // capGroup's resting Y (flush on the base's own scaled top) plus however much height
@@ -994,9 +1033,9 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     if (!modelReady) return; // first call is deferred until the model finishes loading (see Init)
     cells.forEach(function (c) { c.group.parent.remove(c.group); });
     cells = [];
-    // Checkerboard split (see the outlinePassA/B construction comment above) -- A/B keyed by
-    // (row+col)%2; every mesh of a cell (base + cap parts) goes into that one cell's array.
-    var outlineObjectsA = [], outlineObjectsB = [];
+    // 3-way split (see the outlinePassA/B/C construction comment above) -- every mesh of a
+    // cell (base + cap parts) goes into one of these 3 arrays, keyed by cellOutlineColor(r,c).
+    var outlineObjectsA = [], outlineObjectsB = [], outlineObjectsC = [];
 
     var cols = settings.colCount, rows = settings.rowCount;
     var spacingX = settings.colSpacing * (NATURAL_BASE_RADIUS * settings.baseRadius * 2.2);
@@ -1081,33 +1120,32 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         // gap-filler, not a part that needs its own visible outline -- the base's top-rim
         // outline and the cap's bottom outline already visually frame the seam between them.
 
-        // Base and cap SWAP which pass they land in by checkerboard parity (not both always
-        // going to the same one) -- see the outlinePassA/B construction comment above for why
-        // this, not a 3rd/4th pass, is how a cell's own base-to-cap seam is restored without
-        // the lag a real 4-pass split cost. extMesh is deliberately NOT included in either
-        // pass's selectedObjects -- reported directly as a vertical line cutting through the
-        // base's own surface. Root cause: extMesh now spans the base's full height (0 to
-        // capBottom, this session's own earlier fix), and OutlinePass draws every pass's edges
-        // unconditionally (the hidden/visible depth check was removed earlier this session
-        // after it was found to misclassify even a fully unoccluded edge as hidden -- see
-        // makeOutlinePass()'s own comment). With no occlusion check, the cap-pass's OutlinePass
-        // drew extMesh's own silhouette edges (a narrower cylinder than the base) directly on
-        // top of the base's rendered pixels, regardless of the base actually covering it in the
-        // real scene. (A follow-up attempt to give the small base/cap corner its own outline
-        // coverage via a second, invisible "outline-only" helper mesh was tried and reverted --
-        // OutlinePass ignores objects with visible=false entirely, confirmed by scaling one up
-        // 6x with zero effect on screen; and at rest the base/cap gap is ~0 anyway (capGroup
-        // sits exactly at baseTop), so there was no real 3D gap for a helper to fill regardless
-        // -- the corner artifact this was meant to fix is a separate, harder problem, see
-        // makeOutlinePass()'s own comment on the known base/cap corner and cross-instance
-        // limitations of this 2-pass technique.)
-        if ((r + c) % 2 === 0) {
-          outlineObjectsA.push(baseMesh);
-          outlineObjectsB.push(exteriorMesh, unpressedMesh, pressedMesh);
-        } else {
-          outlineObjectsB.push(baseMesh);
-          outlineObjectsA.push(exteriorMesh, unpressedMesh, pressedMesh);
-        }
+        // Base uses this cell's own outline color; cap uses the NEXT one (mod 3) -- always a
+        // different pass than its own base, same guarantee the old 2-pass swap gave, just
+        // generalized to 3 slots. See cellOutlineColor()'s own comment and the outlinePassA/B/C
+        // construction comment above for the full derivation and what this scheme does and
+        // doesn't separate. extMesh is deliberately NOT included in any pass's selectedObjects
+        // -- reported directly as a vertical line cutting through the base's own surface. Root
+        // cause: extMesh now spans the base's full height (0 to capBottom, this session's own
+        // earlier fix), and OutlinePass draws every pass's edges unconditionally (the hidden/
+        // visible depth check was removed earlier this session after it was found to
+        // misclassify even a fully unoccluded edge as hidden -- see makeOutlinePass()'s own
+        // comment). With no occlusion check, the cap-pass's OutlinePass drew extMesh's own
+        // silhouette edges (a narrower cylinder than the base) directly on top of the base's
+        // rendered pixels, regardless of the base actually covering it in the real scene. (A
+        // follow-up attempt to give the small base/cap corner its own outline coverage via a
+        // second, invisible "outline-only" helper mesh was tried and reverted -- OutlinePass
+        // ignores objects with visible=false entirely, confirmed by scaling one up 6x with
+        // zero effect on screen; and at rest the base/cap gap is ~0 anyway (capGroup sits
+        // exactly at baseTop), so there was no real 3D gap for a helper to fill regardless --
+        // the corner artifact this was meant to fix is a separate, harder problem, see
+        // makeOutlinePass()'s own comment on the known base/cap corner limitation.)
+        var cellColor = cellOutlineColor(r, c);
+        var capColor = (cellColor + 1) % 3;
+        var baseArr = [outlineObjectsA, outlineObjectsB, outlineObjectsC][cellColor];
+        var capArr = [outlineObjectsA, outlineObjectsB, outlineObjectsC][capColor];
+        baseArr.push(baseMesh);
+        capArr.push(exteriorMesh, unpressedMesh, pressedMesh);
 
         cells.push(cell);
         scene.add(group);
@@ -1116,6 +1154,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
     outlinePassA.selectedObjects = outlineObjectsA;
     outlinePassB.selectedObjects = outlineObjectsB;
+    outlinePassC.selectedObjects = outlineObjectsC;
     refreshOutlines(); // re-applies enabled/color to the passes now that selectedObjects exist
   }
 
