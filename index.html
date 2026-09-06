@@ -882,11 +882,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // on purpose -- an outline is its own visual layer, not tied to another toggle unasked.
   var outlineMat = new THREE.MeshBasicMaterial({ color: settings.outlineColor, side: THREE.BackSide });
 
-  // The real Rhino-modeled button (data/BUTTON MODEL.fbx) replaces the placeholder
-  // cylinders: 4 named parts -- BUTTON_BASE, BUTTON_EXTERIOR (the always-visible outer
-  // shell), and a BUTTON_INTERIOR_-_UNPRESSED/_PRESSED pair (the convex/concave swap
-  // discussed earlier, toggled by visibility on press same as the 2D project's own
-  // dome-up/dome-pressed swap). Authored Z-up (Rhino's convention) -- rotateX(-90deg)
+  // The real Rhino-modeled button. Authored Z-up (Rhino's convention) -- rotateX(-90deg)
   // once, baked into the geometry, converts each part to this scene's Y-up frame so
   // nothing downstream needs to think about the source coordinate system again. Radius
   // ~2.03 and height 1 for the base (see NATURAL_BASE_* below) are the model's own real
@@ -899,32 +895,112 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null };
   var modelReady = false;
 
-  function extractGeo(root, groupName) {
-    var groupObj = root.getObjectByName(groupName);
-    var mesh = null;
-    if (groupObj) groupObj.traverse(function (c) { if (c.isMesh && !mesh) mesh = c; });
-    if (!mesh) throw new Error("BUTTON MODEL.fbx: part not found -- " + groupName);
+  // BUTTON MODEL WITH OUTLINE.fbx's own baked outline shell (material group 1 on every
+  // part -- see loadButtonModel()'s own comment) is deliberately NOT used for rendering.
+  // Tried live, extensively, before falling back to this: BackSide culling (the same
+  // technique outlineMat above already uses successfully for this project's own procedural
+  // shell) rendered the base correctly as a thin rim, but the exterior/cap came out solid
+  // black almost everywhere -- and even within the exterior alone, its cylindrical side
+  // wall culled correctly while its flat top face did not, isolated with a separate test
+  // material. This means the 4 parts (and even different faces within one part) don't share
+  // one consistent winding/offset convention, so no single side setting fixes all of them.
+  // Given that, extractGeo() below keeps only material group 0 (the real, normal surface)
+  // and drops group 1 entirely, so this new model's shape/geometry gets used (per request)
+  // without shipping a visibly broken baked outline -- the existing, already-reliable
+  // procedural outline systems (outlineMat's inverted-hull technique, or the OutlinePass
+  // screen-space toggle) still provide the actual visible outline, unaffected by this.
+  function extractGeo(mesh) {
     var geo = mesh.geometry.clone();
+    if (geo.groups && geo.groups.length > 1) {
+      var keep = geo.groups.filter(function (g) { return g.materialIndex === 0; });
+      var attrNames = Object.keys(geo.attributes);
+      var newAttrs = {};
+      attrNames.forEach(function (name) {
+        var attr = geo.attributes[name];
+        var itemSize = attr.itemSize;
+        var totalItems = keep.reduce(function (sum, g) { return sum + g.count; }, 0);
+        var arr = new Float32Array(totalItems * itemSize);
+        var offset = 0;
+        keep.forEach(function (g) {
+          for (var i = 0; i < g.count; i++) {
+            for (var k = 0; k < itemSize; k++) {
+              arr[offset * itemSize + k] = attr.getComponent(g.start + i, k);
+            }
+            offset++;
+          }
+        });
+        newAttrs[name] = new THREE.BufferAttribute(arr, itemSize);
+      });
+      var filtered = new THREE.BufferGeometry();
+      Object.keys(newAttrs).forEach(function (name) { filtered.setAttribute(name, newAttrs[name]); });
+      geo = filtered;
+    }
     geo.rotateX(-Math.PI / 2);
     geo.computeBoundingBox();
     return geo;
   }
 
+  // BUTTON MODEL WITH OUTLINE.fbx (2026-09-06, replacing the original BUTTON MODEL.fbx):
+  // same 4 parts, but the artist added a 2nd, baked outline shell directly into each part's
+  // OWN mesh as a 2nd material slot/face-group (an "outline emission material", per the
+  // user directly) -- NOT 4 separate named objects like the original file. Confirmed live
+  // via FBXLoader before writing any of this: all 4 meshes come through named generically
+  // ("Object_1/3/4/5", not "BUTTON_BASE" etc. -- the descriptive names were lost in this
+  // export), each with geometry.groups splitting its faces across exactly 2 materials
+  // ("Material_2" = the normal colored surface, plus an outline-named one worth noting has
+  // typos as authored: "OUTLINE", "BUTTONOULINE", "OUTLINE INT", "PRESSOUTLINe" --
+  // reproduced verbatim from the FBX, not typos introduced here). Named lookup by string
+  // (root.getObjectByName) is therefore unusable now; parts are identified by bounding-box
+  // radius instead, matched against the SAME NATURAL_BASE_RADIUS/NATURAL_EXTERIOR_RADIUS
+  // constants this file already uses elsewhere (confirmed via live bbox inspection: base's
+  // XZ half-extent ~2.05 vs NATURAL_BASE_RADIUS 2.03125, exterior's ~1.519 vs
+  // NATURAL_EXTERIOR_RADIUS 1.5 -- both match closely). The remaining 2 meshes (the interior
+  // domes, both ~1.06-1.11 XZ half-extent) are told apart by height: the unpressed dome
+  // measured taller (Y range 0-2.101) than the pressed one (0-1.865), consistent with
+  // pressing pushing the dome down/in.
+  // IMPORTANT: measures the ALREADY-ROTATED (Y-up) geometry from extractGeo(), not the raw
+  // FBX mesh -- the source model is authored Z-up, so radius/height on the untransformed
+  // geometry would read the wrong axes entirely (radius in XY instead of XZ, height along Z
+  // instead of Y). Caught live: an earlier version measured the raw mesh and produced a
+  // completely broken (near-solid-black) render, because it silently mismatched every part.
+  function identifyPart(rotatedGeo) {
+    var bb = rotatedGeo.boundingBox;
+    var radius = Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z) / 2;
+    var height = bb.max.y - bb.min.y;
+    return { radius: radius, height: height };
+  }
+
   function loadButtonModel() {
     return new Promise(function (resolve) {
-      new FBXLoader().load("data/BUTTON MODEL.fbx", function (obj) {
+      new FBXLoader().load("data/BUTTON MODEL WITH OUTLINE.fbx", function (obj) {
         try {
-          modelGeo.base = extractGeo(obj, "BUTTON_BASE");
-          modelGeo.exterior = extractGeo(obj, "BUTTON_EXTERIOR");
-          modelGeo.unpressed = extractGeo(obj, "BUTTON_INTERIOR_-_UNPRESSED");
-          modelGeo.pressed = extractGeo(obj, "BUTTON_INTERIOR_-_PRESSED");
+          var candidates = [];
+          obj.traverse(function (c) { if (c.isMesh) candidates.push(extractGeo(c)); });
+          if (candidates.length !== 4) throw new Error("expected 4 meshes, found " + candidates.length);
+          var infos = candidates.map(function (geo) {
+            var info = identifyPart(geo);
+            info.geo = geo;
+            return info;
+          });
+          infos.sort(function (a, b) { return b.radius - a.radius; });
+          var baseInfo = infos[0]; // widest -> base
+          var exteriorInfo = infos[1]; // 2nd widest -> exterior
+          var interior = infos.slice(2); // remaining 2 -> the interior dome pair
+          interior.sort(function (a, b) { return b.height - a.height; });
+          var unpressedInfo = interior[0]; // taller -> unpressed
+          var pressedInfo = interior[1]; // shorter -> pressed
+
+          modelGeo.base = baseInfo.geo;
+          modelGeo.exterior = exteriorInfo.geo;
+          modelGeo.unpressed = unpressedInfo.geo;
+          modelGeo.pressed = pressedInfo.geo;
           modelReady = true;
         } catch (e) {
-          console.error("Failed to process BUTTON MODEL.fbx:", e);
+          console.error("Failed to process BUTTON MODEL WITH OUTLINE.fbx:", e);
         }
         resolve();
       }, undefined, function (err) {
-        console.error("Failed to load BUTTON MODEL.fbx:", err);
+        console.error("Failed to load BUTTON MODEL WITH OUTLINE.fbx:", err);
         resolve();
       });
     });

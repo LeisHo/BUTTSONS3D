@@ -851,6 +851,66 @@ errors, real click functions, default Geometry-mode outline unaffected
 (this change only touches the OutlinePass code path).
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 12:44 AM - 01:10 AM EDT
+
+User exported a new model, `data/BUTTON MODEL WITH OUTLINE.fbx`, and asked to
+switch to it. Clarified mid-turn: "that fbx is the same model but with a
+outline emission material applied to create an outline."
+
+Investigated the new file's structure before touching any code (loaded it
+live through this project's own FBXLoader import, traversed the hierarchy):
+all 4 parts come through as generically-named meshes ("Object_1/3/4/5", not
+"BUTTON_BASE" etc. -- the descriptive names were lost in this export), each
+with `geometry.groups` splitting its faces across 2 materials -- the normal
+"Material_2" plus an outline-named one (verbatim from the file, typos
+included: "OUTLINE", "BUTTONOULINE", "OUTLINE INT", "PRESSOUTLINe"). This
+matched the user's description exactly: each part now carries its own
+baked outline shell as a 2nd material group on the same mesh.
+
+Since names are gone, rewrote part identification to use bounding-box
+radius instead, matched against this project's own existing
+NATURAL_BASE_RADIUS/NATURAL_EXTERIOR_RADIUS constants (confirmed close:
+~2.05 vs 2.03125, ~1.519 vs 1.5), with the 2 remaining interior domes told
+apart by height (taller = unpressed, shorter = pressed, consistent with
+pressing pushing the dome down). Caught and fixed one real bug during this:
+the first version measured bounding boxes on the RAW (Z-up, unrotated) FBX
+mesh instead of the already-rotated Y-up geometry, silently reading radius
+and height on the wrong axes and producing a completely broken render.
+
+Attempted to actually render the baked outline shell (multi-material mesh,
+group 0 = color, group 1 = a new bakedOutlineMat) before falling back:
+tried BackSide culling (same technique this project's own existing
+procedural outline already uses successfully) -- the base rendered
+correctly as a thin rim, but the exterior/cap came out solid black almost
+everywhere. Isolated further with dedicated test materials per group: even
+within the exterior alone, its cylindrical side wall culled correctly while
+its flat top face did not. Confirmed via a live wireframe overlay that the
+outline shell IS a genuine small enlarged duplicate (not a modeling/export
+error) -- the problem is inconsistent winding/offset convention across
+parts (and even across faces within one part), not a single flippable
+setting. Concluded a single side value can't fix all 4 parts correctly
+without per-part (or per-face) special-casing, which wasn't pursued this
+round.
+
+Fell back to a clean, working alternative: extractGeo() now keeps only
+material group 0 (the real surface) and discards group 1 entirely, so this
+new file's shape gets used as requested without shipping a visibly broken
+baked outline. The existing, already-reliable procedural outline systems
+(the geometry inverted-hull technique, and the OutlinePass screen-space
+toggle) remain the actual source of the visible outline, unaffected.
+
+Also committed `data/BUTTON OUTLINES.blend`, the Blender source file the
+user dropped alongside the FBX export (referenced inside the FBX's own
+embedded path strings) -- consistent with this project's existing
+convention of tracking source files (.3dm/.3dmbak) alongside their
+exports. Left the old `BUTTON MODEL.fbx`/`.fbxbak` in place, unreferenced
+but not deleted, per this project's standing convention.
+
+Verified: fresh reload (a genuinely new tab) shows the full default grid
+correctly colored with clean geometry-mode outlines, no console errors,
+real click/press interaction still functions.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
