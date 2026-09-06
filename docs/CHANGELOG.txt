@@ -1973,6 +1973,66 @@ candidate mechanism (the real button-to-ground gap) rather than a
 confirmed root cause]
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 03:59 PM - 04:10 PM EDT (11m10s)
+
+User approved the fix proposed at the end of the prior round ("yes
+please"): couple button placement to groundPositionY to close the
+2.675-unit real gap discovered between a button's own bottom and the
+ground plane's actual top surface.
+
+Fixed:
+- regenerateGrid()'s cell-group construction now places each group at
+  Y=groundPositionY instead of a hardcoded 0.
+- applySetting()'s existing cfg.groundPos handler (which already
+  live-updates ground.position.y and controls.target.y whenever the
+  "Ground Plane Height" slider moves) now also updates every existing
+  cell's group.position.y to match -- without this, a live slider drag
+  would only move the ground/pivot, not the already-built buttons,
+  reintroducing the gap until the next full regen. Deliberately NOT made
+  regen:true (rebuilding all 196 cells' meshes on every drag tick would be
+  wasteful for a change this cheap to apply directly).
+
+Verified:
+- Direct Box3 measurement (temporary debug hook, removed before commit,
+  confirmed via `git diff` to leave zero net change beyond the intended 2
+  lines) across a 20-cell sample: gap closed from 2.675 to -0.025 (a tiny
+  embed into the ground, not a gap) -- confirmed uniform across all 20
+  sampled cells, not just the one nearest the camera.
+- Confirmed the fix holds correctly after a LIVE groundPositionY slider
+  drag too (tested moving it to -1.0 mid-session), not just at initial
+  page load/regen.
+- Visual check at the user's own exact reported camera angle: front row
+  renders cleanly, no obvious artifacts, though this environment's own
+  screenshot/canvas resolution ceiling (documented in the immediately
+  preceding round) still limits full visual certainty either way -- the
+  structural fix itself is confirmed by direct measurement regardless.
+- Fresh tab reload: clean load, no console errors beyond the expected
+  local 404 on GET /api/save-settings (correct fallback behavior). Hit
+  the same known, already-mitigated intermittent net::ERR_CONNECTION_RESET
+  glb-load flakiness once under heavy load from several accumulated stale
+  tabs this round's own testing had built up -- closed the stale tabs and
+  confirmed a clean load on the very next fresh tab, ruling out a
+  regression from this change.
+
+Flagged directly to the user (per CLAUDE.md 0a, since this is a real
+scene-layout behavior change, not a pure bug patch): existing saved camera
+views/presets tuned against the old floating-button layout (buttons at
+world Y=0 regardless of groundPositionY) will now frame the grid
+differently, since the whole grid moves to genuinely sit at
+groundPositionY instead of floating 2.675 units above it by camera-angle
+coincidence.
+
+[Shape: small, localized existing-mechanism extension (reusing
+applySetting()'s already-existing live-update pattern for
+ground.position.y/controls.target.y, just extended to cells) approved
+after being surfaced as a real behavior change; Files: 1 (index.html, +13/
+-1) + 1 CHANGELOG entry; Research: none beyond direct Box3 measurement via
+a temporary debug hook; Confidence: MEDIUM going in, resolved with strong
+direct-measurement evidence, though full visual confirmation of the
+original artifact's resolution is still pending the user's own check on
+their real desktop browser]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
