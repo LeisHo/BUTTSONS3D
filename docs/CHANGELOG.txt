@@ -1292,6 +1292,43 @@ via Reset afterward (no settings were re-saved to the git-tracked log this
 round).
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 08:07 AM - 08:18 AM EDT (11m39s)
+
+User asked whether the extension's scale matches the button base -- answered
+directly from the code (it targets buttonRadius/the exterior, not baseRadius,
+by design) -- then clarified: "it should match the button exterior, not
+interior," suggesting the extension looked like it was sized closer to the
+interior domes than the exterior ring.
+
+Measured the real numbers live (temporary console.warn, removed before
+committing) rather than assuming: exterior's true radius 1.5183050632476807,
+extension's own authored radius identical (1.5183050632476807 -- the user
+modeled it to the same footprint as the exterior), interior dome radii
+1.077/1.122 (clearly not what was being matched). The actual bug found:
+NATURAL_EXTERIOR_RADIUS was hardcoded to 1.5 and used directly in the
+extension's radius-matching formula (extRadiusScale), instead of the live-
+measured 1.5183050632476807 -- a real but small ~1.2% staleness, not nearly
+enough on its own to look like matching the interior (a ~26-29% difference).
+
+Reported this honestly rather than overclaiming it as the full explanation:
+fixed the confirmed ~1.2% staleness (NATURAL_EXTERIOR_RADIUS is now
+overwritten with mainRefs.exterior.radius once loadButtonModel() resolves,
+same live-measurement approach as NATURAL_EXTERIOR_HEIGHT/NATURAL_EXTERIOR_MIN_Y),
+verified live (fresh tab, no console errors, full 14x14 grid renders
+correctly), and separately investigated a second, likely more consequential
+finding while looking into this: the extension's own geometry has a real
+solid cap face inside the tube (confirmed visually via wireframe + isolating
+the extension in a top-down view -- a lit, shaded solid surface visible when
+looking down into what should be a hollow connector shaft), which the user
+also asked about in the same exchange ("how come the extension geometry has
+a top cap? is there a way to hide it"). Surfaced to the user as a judgment
+call rather than silently picking an approach: re-export without the cap
+face in Blender (simpler, and the user is already iterating there) vs. a
+code-side geometry filter to strip it programmatically (more code, doesn't
+require a re-export). Awaiting the user's preference before implementing --
+not yet fixed as of this entry.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
