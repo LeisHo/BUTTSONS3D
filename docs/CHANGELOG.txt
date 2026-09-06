@@ -1613,6 +1613,53 @@ Settings) or a fresh screenshot to pinpoint the angle precisely, rather
 than guessing further. Not fixed this round -- still diagnostic.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 12:47 PM - 01:20 PM EDT (33m24s)
+
+User: "Save settings still fails" (again, after the prior round's server
+restart didn't actually resolve it) + their exact live settings dump
+(including a new "Camera 3" preset) to help pin down the remaining
+white-sliver artifact. Mid-turn: "i updated the glb file. update."
+
+Save Settings root-caused properly this time, not just guessed at again:
+tested the actual /api/save-settings endpoint directly via curl, bypassing
+the browser entirely -- both a small test payload and the user's exact
+full settings dump succeeded cleanly (200 OK) every time. This rules out
+the server-side handler itself. Separately, reloading the page (fresh tabs
+included) intermittently produced real net::ERR_CONNECTION_RESET errors on
+simple GET/POST requests with nothing else competing for the port,
+self-resolving on a plain retry -- confirmed live, not assumed. Concluded
+this is OS/antivirus-level interference with rapid new local connections on
+Windows, not a bug in dev_server.py's own ~50-line handler. Added a shared
+fetchWithRetry() helper (fetch, then one retry after a 250ms delay on
+failure) and applied it to both the boot-time settings-log fetch and the
+Save Settings POST -- directly mitigates the actual symptom (a false "Save
+failed" from a transient blip) without needing to eliminate the underlying
+OS-level flakiness. Verified live: 6 rapid-fire Save clicks in a row all
+returned 200 OK with no failures.
+
+Also restored/wrote the user's latest pasted settings dump directly to
+data/processed/dev-panel-settings.json (used to try to reproduce their
+exact reported camera view for the artifact investigation) -- caught and
+fixed one self-inflicted mistake immediately: an early curl test against
+the live endpoint (using a placeholder {"test":1} body to check
+connectivity) actually overwrote the real settings file via the real
+save-settings route; restored the correct content right away before it
+could be committed.
+
+White-sliver artifact: confirmed the raw pasted camera position (as
+already found last round) doesn't render a usable view on load, so
+navigated manually to reproduce a similarly close, low-angle crop of the
+front row instead of chasing the literal numeric values. With the
+newly-updated data/BUTTON OUTLINES.glb (the file the user updated mid-turn,
+already captured in the same commit as the retry fix), the front row was
+completely clean across multiple zoom levels and a wider scan -- no white
+slivers found this round. Fresh tab: no console errors (aside from the
+same 1 stale leftover message from earlier tab history). Reasonably
+confident this re-export also resolves the remaining artifact, though
+full certainty would need the user's own confirmation from their live
+view.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
