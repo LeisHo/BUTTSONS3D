@@ -1544,6 +1544,23 @@ mesh(es) in Blender and re-export, same as previous rounds. Not fixed this
 round -- diagnostic only, awaiting the user's re-export.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 11:45 AM - 12:00 PM EDT (14m49s, immediate continuation of the
+white-sliver diagnostic entry above)
+
+While finishing up the diagnostic writeup above, git status showed
+data/BUTTON OUTLINES.glb had changed on disk (re-exported by the user during
+the investigation, without a separate message) -- checked it rather than
+leaving it uncommitted.
+
+Verified live whether this new export also fixes the just-diagnosed white-
+sliver artifact: matched Ground Color to the same light lavender, regrew a
+button tall to reproduce the same exposed-seam condition the artifact was
+caught in, and inspected multiple base seams at close zoom (both default and
+tall-button height) -- clean, no white slivers anywhere this time. Fresh tab:
+no console errors. Committed and pushed the re-export with a note that it
+appears to resolve the diagnosed issue.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
