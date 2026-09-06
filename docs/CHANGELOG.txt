@@ -1502,6 +1502,48 @@ regress the existing exterior/interior click path. Fresh-tab console clean
 throughout.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 11:27 AM - 11:45 AM EDT (18m19s)
+
+User shared a screenshot (arrows pointing at small white slivers breaking the
+black outline near the base/ground boundary on several buttons) and asked
+"what are these artefacts... blending mode thing or backface culling thing?"
+-- investigation only, no code changes landed (all diagnostic edits reverted
+before finishing).
+
+Reproduced live rather than guessing from the screenshot alone: switched
+Ground Color to a light lavender (matching the screenshot) and grew a couple
+of front-row buttons taller -- confirmed the same white slivers appear right
+at the base's bottom rim, at what look like the faceted side-wall's segment
+boundaries.
+
+Ran 2 temporary diagnostic edits to bakedOutlineMat (both reverted before
+this entry, no trace left in the committed diff):
+1. side: THREE.DoubleSide instead of FrontSide -- broke the ENTIRE outline
+   effect scene-wide (buttons rendered almost solid black), confirming the
+   inverted-hull outline technique fundamentally depends on FrontSide-only
+   culling to work at all; not a clean isolation of the small gaps
+   specifically, but real evidence the technique is culling-sensitive.
+2. wireframe: true (kept FrontSide) -- showed the outline shell's own
+   triangulation directly over the button surfaces, including visible gaps
+   in the wireframe pattern at the same rim locations the slivers appear at.
+
+Conclusion reported to the user: NOT a blending-mode issue (bakedOutlineMat
+is a plain opaque MeshBasicMaterial, no blending involved) -- this is a
+backface-culling / normals-winding issue, most likely a small number of
+individual faces on the outline shell mesh (near the base's bottom rim,
+at the faceted wall's segment boundaries) with normals wound the opposite
+way from the rest of that mesh. Combined with the FrontSide-only culling
+the outline technique requires (confirmed by test 1 above), those specific
+reversed faces are invisible from the normal viewing angle, showing the
+background through instead of black -- exactly the class of issue this
+model has hit multiple times before this session (documented in
+bakedOutlineMat's own construction comment: 2 earlier rounds of BackSide/
+FrontSide flips after normals recalculation). Recommended fix mirrors the
+established playbook: recalculate normals on the affected outline shell
+mesh(es) in Blender and re-export, same as previous rounds. Not fixed this
+round -- diagnostic only, awaiting the user's re-export.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
