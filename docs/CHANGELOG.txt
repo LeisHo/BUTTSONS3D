@@ -1202,6 +1202,49 @@ settings log file itself (data/processed/dev-panel-settings.json) alongside
 index.html, matching the sibling project's own convention of tracking it.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 07:37 AM - 07:45 AM EDT (8m41s)
+
+User exported a dedicated glTF for the button extension (the base-to-cap
+connector) and asked to use it instead of the earlier stand-in: extMesh
+sharing modelGeo.exterior's own geometry, scaled vertically. Added
+data/BUTTON EXTENSION OUTLINES.glb (main surface + outline shell mesh, same
+"Material_2"-prefix convention as the combined BUTTON OUTLINES.glb) and a new
+loadExtensionModel() to load it independently, alongside the existing
+loadButtonModel() in Init's Promise.all().
+
+Added/Changed (index.html):
+- modelGeo/outlineGeo gained an `extension` slot; new NATURAL_EXTENSION_RADIUS/
+  NATURAL_EXTENSION_HEIGHT measured live off the loaded geometry's own bounding
+  box (same approach NATURAL_EXTERIOR_HEIGHT already used). New extGeo/
+  extNaturalRadius/extNaturalHeight vars hold whichever geometry/dimensions are
+  actually in use -- the dedicated extension asset normally, or the old
+  exterior-borrowing values as a fallback if the new file ever fails to load,
+  so a load failure degrades gracefully instead of crashing or breaking the
+  scene.
+- extMesh now built from extGeo instead of modelGeo.exterior. Radius scale
+  (extRadiusScale) is re-derived through extGeo's own natural radius
+  (NATURAL_EXTERIOR_RADIUS / extNaturalRadius, times the existing buttonRadius
+  * extensionRadiusMargin) so the extension's real-world diameter still
+  matches the button's exactly regardless of what radius the dedicated asset
+  happens to be authored at -- this reduces to the exact same math as before
+  when extGeo is still the exterior fallback. updateExtension()'s vertical
+  scale (span / extNaturalHeight) follows the same pattern.
+- The extension's own outline shell (outlineGeo.extension) is used when
+  present; only falls back to outlineGeo.exterior when extGeo ITSELF is still
+  the exterior fallback (matching shapes) -- never mismatches the exterior's
+  outline shape onto the real dedicated extension geometry.
+
+Verified: fresh tab load, no console errors, no "outline shell missing"
+warning for the extension (the new file included both a main mesh and its
+own outline shell, matched by the established naming convention on the first
+try). Isolated single-button view (1x1 grid) at 2 zoom levels shows the
+extension's radius lining up exactly with the exterior above it -- no step,
+gap, or misalignment at the seam -- with its own clean black outline ring.
+Full default 14x14 grid also renders correctly with no artifacts across
+every button. Reset (not a settings change) used to restore the grid to
+14x14 afterward, so nothing was re-saved to the settings log this round.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
