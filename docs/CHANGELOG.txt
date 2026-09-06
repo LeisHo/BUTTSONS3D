@@ -1007,6 +1007,51 @@ functions, both outline techniques (Geometry, OutlinePass) still coexist
 correctly alongside the now-working baked outline.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 02:38 AM - 02:48 AM EDT
+
+Follow-up to the previous round (baked outline finally rendering
+correctly). User asked whether adjusting its thickness required going
+back into Blender -- confirmed yes, since it's real offset geometry, not
+a procedural effect -- then asked to add a runtime alternative instead of
+requiring a re-export every time.
+
+Added bakedOutlineThickness (0 default, range 0-1, "Outline Thickness
+(Baked Shell)" in the dev panel's Shading group). Applies a uniform
+1+thickness scale to each of the 4 baked outline child meshes -- same
+"puff the shell" concept as the existing Geometry-technique's
+outlineThickness slider, but a fully independent control, since the baked
+shell already covers each part's own true silhouette exactly and needs no
+axis-specific exception the way outlineAxisScale()'s "xz"-only case does
+for the base/extension.
+
+Added a `bakedOutlineMeshes` array on each cell (parallel to the existing
+`outlineMeshes` array for the procedural technique) so refreshOutlines()
+can reach and scale these 4 meshes per cell without re-walking the scene
+graph.
+
+Verified live: default (0) matches the previous round's committed look
+exactly; a single isolated button pushed to max (1.0) shows a dramatically
+enlarged shell, confirming the mechanism actually works; a moderate value
+(0.1) shows a clean, proportionally thicker outline with no artifacts.
+Hit one unrelated, transient issue mid-round -- a "Failed to fetch" error
+loading BUTTON OUTLINES.glb that resolved on a plain retry (curl directly
+against the dev server confirmed it was answering fine throughout, so this
+was a browser-pane-side networking hiccup, not a real regression) -- noted
+here rather than silently ignored, since it could otherwise look alarming
+in isolation.
+
+Also noticed BUTTON OUTLINES.glb itself changed on disk partway through
+this round (same byte count, different hash, mtime matching right when
+this round started) -- the user re-exported/re-saved it again in
+parallel, outside this conversation. All of this round's own testing
+happened after that timestamp, so it was already verified against the
+current file; included the updated binary in this commit as-is rather
+than questioning what changed inside it.
+
+Verified: fresh tab, default settings, no console errors, real click
+functions.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

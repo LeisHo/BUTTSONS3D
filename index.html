@@ -422,6 +422,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // silently change the current look -- only makes it tunable.
     outlinePassStrength: 10.5,
     outlinePassGlow: 0,
+    // Runtime scale on top of the user's own baked outline shell (data/BUTTON OUTLINES.glb --
+    // see bakedOutlineMat's own construction comment), so its thickness can be tuned live in
+    // the dev panel instead of round-tripping through Blender every time. 0 = exactly the
+    // authored shell, no extra scaling. Independent of outlineEnabled/outlineThickness above
+    // -- those govern this project's own procedural outline techniques, not the baked one,
+    // which stays visible regardless (see refreshOutlines()'s own comment on that).
+    bakedOutlineThickness: 0,
 
     debugWireframe: false,
     debugHideBase: false,
@@ -453,7 +460,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
       camera: ["cameraX", "cameraHeight", "cameraDistance", "cameraFov", "cameraYaw", "cameraPitch", "cameraZoom"],
       scene: ["groundSize", "groundColor", "baseColor", "buttonColor"],
-      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow"],
+      shading: ["cellShadingEnabled", "toonBands", "toonShadowFloor", "toonHighlightCeiling", "outlineEnabled", "outlineUsePostprocessing", "outlineThickness", "outlineColor", "outlinePassThickness", "outlinePassStrength", "outlinePassGlow", "bakedOutlineThickness"],
       debug: ["debugWireframe", "debugHideBase", "debugHideExterior", "debugHideInterior", "debugHideExtension"]
     },
     _collapsedGroups: ["devpanel", "button", "lighting", "scene", "camera", "debug"]
@@ -516,6 +523,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "outlinePassThickness", label: "Outline Thickness (Screen-Space Pass)", min: 0, max: 4, step: 0.05, unit: "(Px)", outline: true },
     { key: "outlinePassStrength", label: "Outline Edge Strength (Screen-Space Pass)", min: 0, max: 15, step: 0.5, unit: "(x)", outline: true },
     { key: "outlinePassGlow", label: "Outline Edge Glow (Screen-Space Pass)", min: 0, max: 5, step: 0.1, unit: "(x)", outline: true },
+    { key: "bakedOutlineThickness", label: "Outline Thickness (Baked Shell)", min: 0, max: 1, step: 0.005, unit: "(x)", outline: true },
 
     { key: "devTitleFontSize", label: "Dev Panel Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-title-font-size" },
     { key: "devTabFontSize", label: "Desktop/Mobile Tab Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-tab-font-size" },
@@ -1034,11 +1042,21 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // the base/button colors being part of the model's own look. Still follows the shared
     // outlineColor setting so all outline mechanisms stay visually consistent.
     bakedOutlineMat.color.set(settings.outlineColor);
+    // Uniform scale (all 3 axes) on top of the authored shell -- unlike outlineAxisScale()
+    // above, there's no "xz"-only special case here: the baked shell already correctly
+    // covers each part's own true silhouette (that's the whole point of it being authored
+    // per-part rather than a generic axis-scaled duplicate), so scaling it further out is
+    // just a uniform puff from wherever its own local origin is, same intent as
+    // outlineThickness for the Geometry technique but a completely separate control.
+    var bakedScale = 1 + settings.bakedOutlineThickness;
     var useChildMeshes = settings.outlineEnabled && !settings.outlineUsePostprocessing;
     cells.forEach(function (c) {
       c.outlineMeshes.forEach(function (o) {
         o.mesh.visible = useChildMeshes;
         o.mesh.scale.set(outlineAxisScale(o.axes, "x"), outlineAxisScale(o.axes, "y"), outlineAxisScale(o.axes, "z"));
+      });
+      c.bakedOutlineMeshes.forEach(function (m) {
+        m.scale.set(bakedScale, bakedScale, bakedScale);
       });
     });
     var usePass = settings.outlineEnabled && settings.outlineUsePostprocessing;
@@ -1153,7 +1171,8 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         var baseMesh = new THREE.Mesh(modelGeo.base, baseMat);
         baseMesh.scale.set(settings.baseRadius, settings.baseHeight, settings.baseRadius);
         group.add(baseMesh);
-        if (outlineGeo.base) baseMesh.add(new THREE.Mesh(outlineGeo.base, bakedOutlineMat));
+        var bakedOutlineMeshes = [];
+        if (outlineGeo.base) { var bo = new THREE.Mesh(outlineGeo.base, bakedOutlineMat); baseMesh.add(bo); bakedOutlineMeshes.push(bo); }
 
         var extMesh = new THREE.Mesh(extGeo, buttonMat);
         group.add(extMesh);
@@ -1165,20 +1184,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         var exteriorMesh = new THREE.Mesh(modelGeo.exterior, buttonMat);
         exteriorMesh.userData.isButton = true;
         capGroup.add(exteriorMesh);
-        if (outlineGeo.exterior) exteriorMesh.add(new THREE.Mesh(outlineGeo.exterior, bakedOutlineMat));
+        if (outlineGeo.exterior) { var eo = new THREE.Mesh(outlineGeo.exterior, bakedOutlineMat); exteriorMesh.add(eo); bakedOutlineMeshes.push(eo); }
 
         var unpressedMesh = new THREE.Mesh(modelGeo.unpressed, buttonMat);
         capGroup.add(unpressedMesh);
-        if (outlineGeo.unpressed) unpressedMesh.add(new THREE.Mesh(outlineGeo.unpressed, bakedOutlineMat));
+        if (outlineGeo.unpressed) { var uo = new THREE.Mesh(outlineGeo.unpressed, bakedOutlineMat); unpressedMesh.add(uo); bakedOutlineMeshes.push(uo); }
 
         var pressedMesh = new THREE.Mesh(modelGeo.pressed, buttonMat);
         capGroup.add(pressedMesh);
-        if (outlineGeo.pressed) pressedMesh.add(new THREE.Mesh(outlineGeo.pressed, bakedOutlineMat));
+        if (outlineGeo.pressed) { var po = new THREE.Mesh(outlineGeo.pressed, bakedOutlineMat); pressedMesh.add(po); bakedOutlineMeshes.push(po); }
 
         var cell = {
           group: group, baseMesh: baseMesh, capGroup: capGroup,
           exteriorMesh: exteriorMesh, unpressedMesh: unpressedMesh, pressedMesh: pressedMesh, extMesh: extMesh,
-          currentGain: 0, pressedAt: 0, pressed: false, tween: null, outlineMeshes: []
+          currentGain: 0, pressedAt: 0, pressed: false, tween: null, outlineMeshes: [], bakedOutlineMeshes: bakedOutlineMeshes
         };
         baseMesh.visible = !settings.debugHideBase;
         exteriorMesh.visible = !settings.debugHideExterior;
