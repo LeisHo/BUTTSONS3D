@@ -1463,6 +1463,45 @@ console errors. Committed only the index.html feature change -- the settings-log
 was never staged with the bad test value, so no fix-up commit was needed there.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 10:33 AM - 10:50 AM EDT (17m12s)
+
+User: "right now, when i click a button multiple times and it gets tall with
+an extension below it. When i click the extension geoemtry, it triggers the
+buttons behind it to click and grow. That should not happen... It is only if
+I am directly clicking onto the button/ button base [that a click should
+trigger]."
+
+Root cause, confirmed by reading pickCell() before touching anything:
+its raycast target list only ever included exteriorMesh/unpressedMesh/
+pressedMesh -- baseMesh and extMesh were NEVER part of it at all. A click
+aimed at a tall button's own extension (which can visually sit in front of
+some OTHER cell's exterior/interior from certain camera angles) passed
+straight through it (nothing there for the ray to hit) and registered on
+whatever cell's exterior/interior happened to be next along that same ray --
+wrongly growing/pressing a completely different button.
+
+Fixed: baseMesh is now tagged with userData.cell and added to the raycast
+targets (base clicks now legitimately trigger a press too, matching the
+user's own stated expectation that base should be a valid click surface).
+extMesh is added to the raycast as well, but deliberately left UNTAGGED --
+it now correctly blocks/occludes a click from passing through to whatever
+sits behind it, without itself ever being a valid trigger (a nearest-hit on
+an untagged mesh resolves to `undefined`, which the existing pointerdown
+handler's `if (!cell) return` already treats as no-op).
+
+Verified live with a real reproduction, not just code review: built a small
+grid, clicked a front-row button repeatedly to grow it tall, rotated the
+camera to a shallow angle until its extension visibly overlapped a button
+in a row behind it on screen, then clicked directly on that overlapping
+extension shaft -- confirmed NOTHING happens (no wrong button reacts, per
+the fix) where it previously would have wrongly triggered whatever was
+behind it. Positive controls: clicked a different button's actual cap
+(clean growth, correct cell) and a button's exposed base rim (also
+triggers correctly now) to confirm the fix didn't just kill all clicks or
+regress the existing exterior/interior click path. Fresh-tab console clean
+throughout.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
