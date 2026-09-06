@@ -1660,6 +1660,16 @@ full certainty would need the user's own confirmation from their live
 view.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 01:41 PM - 01:45 PM EDT (3m54s)
+
+User: "i re exported the buttons outlines glb file. update and push" --
+another routine re-export, no problem reported. Verified live (fresh tab):
+no console errors, settings/retry logic working correctly (0.95/0.8 loaded
+without issue), and the front row renders cleanly across multiple zoom
+levels with no outline gaps. Committed the re-exported asset alone, no
+index.html changes.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
