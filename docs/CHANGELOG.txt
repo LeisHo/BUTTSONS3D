@@ -1245,6 +1245,53 @@ every button. Reset (not a settings change) used to restore the grid to
 14x14 afterward, so nothing was re-saved to the settings log this round.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 07:53 AM - 08:02 AM EDT (9m01s)
+
+User reported a visible gap between the top of the extension and the bottom
+of the button base (the cap) after the previous round's switch to the
+dedicated BUTTON_EXTENSION asset -- the prior round's own verification had
+checked radius/horizontal alignment carefully but hadn't specifically
+scrutinized vertical continuity at that seam, which is how this got missed.
+
+Root cause, confirmed with real measured numbers (added a temporary
+console.warn to log the loaded geometry's actual bounding box, checked
+live, then removed before committing): updateExtension() scaled the
+extension by height but always set position.y = 0, implicitly assuming the
+geometry's own bounding-box bottom sits exactly at its local origin. The old
+exterior-borrowed stand-in's own offset was small enough (measured -0.038,
+~1.9% of its own height) that this assumption went unnoticed as "real export
+tolerance." The dedicated extension asset's own measured offset is far
+larger -- bounding box min.y -0.0762, max.y 1.00014, so a true height of
+1.07634 -- meaning the uncompensated math only stretched the visible portion
+to ~92.9% of the required span, leaving a real ~7% gap at the top.
+
+Fixed generally, not special-cased to the one asset: added
+NATURAL_EXTERIOR_MIN_Y (measured live in loadButtonModel(), mirroring how
+NATURAL_EXTERIOR_HEIGHT was already measured) and NATURAL_EXTENSION_MIN_Y
+(measured live in loadExtensionModel()). The "active" extGeo/extNaturalRadius/
+extNaturalHeight/extNaturalMinY vars are now resolved in ONE place -- Init's
+Promise.all().then(), after both loaders have settled -- rather than being
+set inside either loader individually (setting them from 2 independently-
+resolving promises would race: whichever loader's callback happened to run
+last would silently win, regardless of which one actually has better data).
+updateExtension() now sets position.y = -extNaturalMinY * scaleY, which maps
+the geometry's own measured bottom to world y=0 and its own measured top to
+exactly world y=span (the cap's bottom) regardless of where the asset's
+local origin sits. This also quietly fixes the same (much smaller, ~1.9%)
+gap that likely existed on the exterior-borrowed fallback path all along --
+not itself reported as visible, but the same root cause applied there too.
+
+Verified: measured the real bounding box live before writing the fix (not
+guessed). After the fix, isolated single-button view with the base hidden
+(so the extension's full length, normally masked, is visible end to end) at
+close zoom shows the extension's top meeting the cap's bottom with no gap --
+just a normal shading-only seam line between the 2 separate meshes, fully
+opaque on both sides. Full default 14x14 grid renders correctly with no
+console errors on a fresh tab. Restored debug-hide-base and column/row count
+via Reset afterward (no settings were re-saved to the git-tracked log this
+round).
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
