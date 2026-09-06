@@ -555,6 +555,66 @@ no longer overshooting the base). Real click still functions, no
 console errors on a fresh tab.
 
 --------------------------------------------------------------------------------
+2026-09-05 -- 09:12 PM EDT (single timestamp; round start not separately measured)
+
+User reported, with a screenshot: "the button extension should be the same
+diameter as the button exterior, not the base," plus three more outline bugs:
+"1. Base Outline should not show ontop of the button. 2. Button has no
+outline. 3. what is that white artegact in the blackoutline?" Also relayed a
+Discourse suggestion about OutlinePass render-pass ordering.
+
+Fixed the extension-diameter regression:
+- The prior round's Math.min() clamp against the base's own radius was
+  insufficient -- NATURAL_BASE_RADIUS (2.03125) is itself wider than
+  NATURAL_EXTERIOR_RADIUS (1.5), so clamping to the base still left the
+  extension visibly wider than the button. Removed the base-relative clamp
+  entirely; extRadius is now a direct buttonRadius * NATURAL_EXTERIOR_RADIUS
+  * extensionRadiusMargin, and extensionRadiusMargin's default changed from
+  1.5 to 1 (exact exterior match, no widening). The slider (1-2.5x) still
+  exists for deliberately re-introducing an overhang later.
+
+Fixed the outline bugs (items 1-3) by switching the default outline
+technique from the screen-space OutlinePass to the existing geometry
+(inverted-hull) technique:
+- Root cause: OutlinePass runs as 2 shared passes split by a checkerboard +
+  base/cap-swap scheme (added earlier this session to fix lag while keeping
+  the base-to-cap seam). That scheme guarantees the seam and orthogonal
+  neighbors land in opposite passes, but diagonally-adjacent same-parity
+  cells can still share a pass and their edges merge into one connected
+  blob on screen -- reading as "no outline on this button" or "the wrong
+  part's outline" depending on which edges happened to merge. This was
+  already flagged as a known limitation earlier in the session but measured
+  as far more visually severe than originally estimated once tested at
+  realistic grid density (long connected wavy lines across many buttons).
+- Verified via live A/B at identical camera angle, grid density (14x14 and
+  a zoomed-in 3x3), and both the default dark and a light test ground
+  color: Geometry mode showed zero merging and zero seam/background
+  bleed-through in every case; OutlinePass mode showed the diagonal-merge
+  artifact in the same shots. Switched DEFAULT_SETTINGS.outlineUsePost-
+  processing from true to false. The checkbox remains for switching back
+  to OutlinePass, documented in-code as a known-limitation trade-off.
+- A true fix for OutlinePass would need a 4-way (row%2, col%2) split,
+  doubling the pass count back to 4 and likely reintroducing the lag this
+  session already fixed once (4 passes -> 2) -- not pursued since Geometry
+  mode already has none of these problems.
+- Checked the Discourse pass-reordering suggestion against the actual
+  composer.addPass() call order: already matches it exactly (RenderPass,
+  both OutlinePass instances, OutputPass, no FXAA at all). Told the user
+  directly it would not change anything rather than applying it as
+  busywork.
+- Also resolved an apparent discrepancy where the debugHideExtension
+  checkbox seemed not to hide anything in a live screenshot: verified via a
+  temporary debug hook that the checkbox, settings.debugHideExtension, and
+  every cell's extMesh.visible were all correctly in sync (false -> true ->
+  every extMesh hidden) -- the toggle works correctly; the earlier
+  screenshot's unchanged appearance was the visible cap/base geometry
+  itself, not the extension mesh. Debug hook removed before commit.
+
+Verified: fresh reload at default settings (14x14 grid, Geometry mode) --
+clean outlines on every button and base, no merging, no white/background
+artifact, no console errors, real click still functions.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================

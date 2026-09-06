@@ -326,21 +326,22 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     baseHeight: 1,
     buttonRadius: 1,
     buttonHeight: 0.41,
-    // A safety margin on the gap-fill extension cylinder's radius, on top of it already
-    // matching BUTTON_EXTERIOR's own measured radius exactly. Reported directly: "I should
-    // not be able to see under the button" -- verified live that even though the extension's
-    // radius already equals the exterior mesh's own measured bottom-rim radius exactly (both
-    // 1.5 units, confirmed by walking the actual geometry's vertices), a real gap was still
-    // visible from steep/low camera angles. The exterior isn't a flat-bottomed disc -- its
-    // underside curves inward (domes) above the bottom rim, so from a shallow enough viewing
-    // angle the sightline grazes that curve well before reaching the true bottom-rim radius,
-    // making the cap's APPARENT silhouette narrower than its measured radius at exactly that
-    // angle. A plain straight-sided extension cylinder can't compensate for that by matching
-    // the measured radius alone; empirically tested a 30% margin (still showed a visible
-    // sliver) and a 60% margin (fully closed the gap at a deliberately steep test angle) --
-    // 1.5x split the difference, then cross-checked at buttonHeight=1 (unsquashed) to confirm
-    // it doesn't visibly overshoot the cap's own silhouette there either.
-    extensionRadiusMargin: 1.5,
+    // An optional safety margin on the gap-fill extension cylinder's radius, on top of it
+    // already matching BUTTON_EXTERIOR's own measured radius exactly. A previous round found
+    // that even though the extension's radius equals the exterior mesh's own measured
+    // bottom-rim radius exactly (both 1.5 units), a real gap was visible from steep/low
+    // camera angles ("I should not be able to see under the button") -- the exterior isn't a
+    // flat-bottomed disc, its underside curves inward above the bottom rim, so a shallow
+    // sightline grazes that curve before reaching the true bottom-rim radius. Widening this
+    // margin (empirically: 30% left a visible sliver, 60% fully closed a deliberately steep
+    // test angle) fixed that, but was then reported directly as a NEW, worse regression: "the
+    // button extension should be the same diameter as the button exterior, not the base" --
+    // even after clamping the widened radius to the base's own radius, the base (2.03125) is
+    // itself wider than the exterior (1.5), so the extension still ended up visibly wider
+    // than the button. Defaults to 1.0 (no widening, exact exterior match) so that regression
+    // can't recur by default; the slider still exists for deliberately re-introducing the
+    // under-button-gap trade-off later if wanted.
+    extensionRadiusMargin: 1,
     clickIntensity: 0.56,
     heightGainPerClick: 0.5,
     holdThresholdMs: 250,
@@ -382,7 +383,21 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     outlineEnabled: true,
     outlineThickness: 0.21,
     outlineColor: "#000000",
-    outlineUsePostprocessing: true,
+    // Defaults to Geometry mode (false), not the screen-space OutlinePass. Directly reported,
+    // repeatedly: base outline showing on top of the button, buttons missing their own outline,
+    // and a stray light-colored artifact at the base/cap seam. Root cause: OutlinePass here runs
+    // as 2 shared passes split by a checkerboard+base/cap-swap scheme (see makeOutlinePass()) to
+    // keep it fast -- this guarantees the base-to-cap seam and orthogonal neighbors always land
+    // in opposite passes, but DIAGONALLY-adjacent same-parity cells can still fall in the same
+    // pass and their edges merge into one connected blob, which is what read as "no outline" /
+    // "outline on top of" the wrong part. Live A/B at the same dense grid and camera angle
+    // (2026-09-04/05) confirmed Geometry mode has zero merging and zero seam artifacts while
+    // OutlinePass still showed both. A true fix for OutlinePass would need a 4-way (row%2,
+    // col%2) split, which doubles the pass count back to 4 and reintroduces the lag this session
+    // already fixed once -- not worth it when Geometry mode already works. The checkbox below
+    // still switches back to OutlinePass for anyone who wants the screen-space look and can live
+    // with the diagonal-merge limitation.
+    outlineUsePostprocessing: false,
     // Separate from outlineThickness above -- that one puffs the geometry (inverted-hull)
     // outline meshes outward in local space (a scale factor), which has no meaning for the
     // screen-space pass; this maps directly to OutlinePass's own edgeThickness (screen-space
@@ -949,26 +964,18 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     ground.visible = true; // see its own construction-site comment: hidden until this first real regen
     groundMat.color.set(settings.groundColor);
 
-    // Matches BUTTON_EXTERIOR's own diameter (scaled the same way the cap itself is, via
-    // buttonRadius), times extensionRadiusMargin -- a deliberate overhang so the extension's
-    // straight-sided cylinder actually covers the cap's curved (not flat-bottomed) underside
-    // from steep/low camera angles; see extensionRadiusMargin's own DEFAULT_SETTINGS comment
-    // for the measured investigation behind that margin. Clamped to never exceed the base's
-    // own current radius -- reported directly by the user ("i see a geoemtry that is a wider
-    // diameter than my base... even if i click hide base, hide button ext, hide button int,
-    // its still visible"): extensionRadiusMargin's own default (1.5x) was verified to make
-    // extRadius (2.25 at buttonRadius 1) genuinely exceed NATURAL_BASE_RADIUS (2.03125) --
-    // the margin was tuned purely against the cap's own curved underside (the problem it was
-    // built to fix) without checking it against the OTHER thing the extension connects to,
-    // the base -- so it could visibly poke out past the base's own edge, and (being outside
-    // any of debugHideBase/Exterior/Interior's own meshes) stayed visible regardless of any
-    // of those 3 toggles, which is exactly the bug reported. Math.min against the base's own
-    // radius guarantees the extension can never be the widest thing in the stack, regardless
-    // of how the margin above is tuned.
-    var extRadius = Math.min(
-      settings.buttonRadius * NATURAL_EXTERIOR_RADIUS * settings.extensionRadiusMargin,
-      settings.baseRadius * NATURAL_BASE_RADIUS
-    );
+    // Matches BUTTON_EXTERIOR's own diameter exactly (scaled the same way the cap itself is,
+    // via buttonRadius) -- reported directly by the user: "the button extension should be
+    // the same diameter as the button exterior, not the base." An earlier round widened this
+    // by extensionRadiusMargin (a deliberate overhang meant to cover the cap's curved
+    // underside from steep angles) then clamped it to the BASE's radius so it wouldn't
+    // overshoot the base -- but the base is wider than the exterior (NATURAL_BASE_RADIUS
+    // 2.03125 vs NATURAL_EXTERIOR_RADIUS 1.5), so that clamp alone still left the extension
+    // visibly wider than the button itself, exactly the regression reported here.
+    // extensionRadiusMargin now defaults to 1.0 (no widening) so it matches the exterior
+    // exactly by default; the slider still exists for deliberately re-introducing an
+    // overhang later if the under-button-gap trade-off is ever wanted back.
+    var extRadius = settings.buttonRadius * NATURAL_EXTERIOR_RADIUS * settings.extensionRadiusMargin;
     var extGeo = new THREE.CylinderGeometry(extRadius, extRadius, 1, 24);
 
     for (var r = 0; r < rows; r++) {
