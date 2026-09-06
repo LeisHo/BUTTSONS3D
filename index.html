@@ -939,7 +939,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // primitive.
   var NATURAL_BASE_RADIUS = 2.03125;
   var NATURAL_BASE_HEIGHT = 1;
-  var NATURAL_EXTERIOR_RADIUS = 1.5; // BUTTON_EXTERIOR's own authored radius
+  // BUTTON_EXTERIOR's own authored radius -- 1.5 here is only a fallback default in case
+  // loadButtonModel() ever fails entirely; overwritten with the real live-measured value
+  // (mainRefs.exterior.radius) once the model loads, since the hardcoded guess turned out to
+  // be ~1.2% off the model's actual current radius (1.5183050632476807, confirmed via a
+  // temporary debug log) -- close enough to go unnoticed on its own, but real, and the
+  // extension's own radius-matching math (extRadiusScale) depends on this constant, not the
+  // live measurement, so the staleness was making the extension render ~1.2% narrower than
+  // the true exterior.
+  var NATURAL_EXTERIOR_RADIUS = 1.5;
   // BUTTON_EXTERIOR's own authored height, measured live off the actual geometry (2.000852...,
   // rounded here the same way NATURAL_BASE_RADIUS/NATURAL_EXTERIOR_RADIUS already are) --
   // used to scale extMesh (see its own construction comment: it now shares this exact
@@ -1087,6 +1095,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
           if (mainInfos.length !== 4) throw new Error("expected 4 main meshes, found " + mainInfos.length);
           var mainRefs = assignMainParts(mainInfos, modelGeo);
           NATURAL_EXTERIOR_MIN_Y = modelGeo.exterior.boundingBox.min.y;
+          NATURAL_EXTERIOR_RADIUS = mainRefs.exterior.radius;
           if (outlineInfos.length > 0) assignOutlineParts(outlineInfos, mainRefs, outlineGeo);
           if (outlineInfos.length !== 4) {
             console.warn("BUTTON OUTLINES.glb: expected 4 outline shells, found " + outlineInfos.length +
