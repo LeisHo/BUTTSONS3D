@@ -881,6 +881,21 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   // scale.y) with no extra per-frame sync code needed. Independent of cellShadingEnabled
   // on purpose -- an outline is its own visual layer, not tied to another toggle unasked.
   var outlineMat = new THREE.MeshBasicMaterial({ color: settings.outlineColor, side: THREE.BackSide });
+  // The user's own baked outline shell (data/BUTTON OUTLINES.glb), added as a child of each
+  // real part exactly like outlineMat's own inverted-hull shell above -- but using the
+  // AUTHORED outline geometry (outlineGeo) instead of a scaled copy of the same mesh. 2
+  // earlier attempts (the FBX version, then a first glTF export) both failed with BackSide
+  // culling -- the base rendered a correct thin rim but the exterior/cap came out solid
+  // black, and even within the exterior alone, different faces disagreed. After the user
+  // recalculated normals in Blender and re-exported, BackSide flipped from "mostly right"
+  // to "mostly wrong" everywhere -- confirmed live, FrontSide is what's actually correct
+  // now (the recalculation evidently flipped the whole shell's winding uniformly, from
+  // inconsistent to consistent-but-reversed-from-what-BackSide-expects). Verified across
+  // all 4 parts, the full default 14x14 grid, both dark and light ground colors (no white
+  // artifacts), and a real click -- unlike the procedural techniques, this one has no
+  // cross-instance merging risk at all, since it's genuine per-part geometry, not a shared
+  // screen-space pass or an axis-scaled duplicate that can poke into neighbors.
+  var bakedOutlineMat = new THREE.MeshBasicMaterial({ color: settings.outlineColor, side: THREE.FrontSide });
 
   // The real Rhino-modeled button. Authored Z-up (Rhino's convention) -- rotateX(-90deg)
   // once, baked into the geometry, converts each part to this scene's Y-up frame so
@@ -893,11 +908,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   var NATURAL_BASE_HEIGHT = 1;
   var NATURAL_EXTERIOR_RADIUS = 1.5; // BUTTON_EXTERIOR's own authored radius
   var modelGeo = { base: null, exterior: null, unpressed: null, pressed: null };
-  // The user's own baked outline shell for each part, extracted from BUTTON OUTLINES.glb but
-  // DELIBERATELY NOT RENDERED -- see loadButtonModel()'s own comment for why. Populated
-  // (all 4, non-null) whenever the file loads successfully; kept around as groundwork for a
-  // future round if the underlying mesh data ever gets fixed, not because anything currently
-  // reads it.
+  // The user's own baked outline shell for each part, extracted from BUTTON OUTLINES.glb and
+  // rendered via bakedOutlineMat (see its own construction comment) -- took 2 failed rounds
+  // (FBX, then a first glTF export) before a Blender-side normals recalculation + re-export
+  // finally made this usable; see loadButtonModel()'s own comment for the full history.
+  // Populated (all 4, non-null) whenever the file loads successfully.
   var outlineGeo = { base: null, exterior: null, unpressed: null, pressed: null };
   var modelReady = false;
 
@@ -913,19 +928,23 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     return geo;
   }
 
-  // BUTTON OUTLINES.glb (2026-09-06): the same model, re-exported as glTF instead of FBX,
-  // hoping glTF's stricter spec-mandated winding convention would fix the FBX version's
-  // baked outline shell rendering wrong (BackSide culling worked for the base but not the
-  // exterior, not even consistently within the exterior's own faces). Tested live exactly
-  // like the FBX version (child mesh per part, BackSide black material, procedural outline
-  // disabled to isolate it) -- SAME failure, same parts affected. This rules out "FBX export
-  // quirk" as the cause: since 2 different export formats/pipelines both reproduce the
-  // identical broken result, the winding/normals problem lives in the shell geometry itself
-  // as authored in Blender, not in how it gets exported. A real fix needs the outline
-  // shell's normals recalculated/unified at the source (e.g. Blender's own "Recalculate
-  // Normals" on that geometry) before any re-export, not a different file format. Extracted
-  // and identified here regardless (see outlineGeo above) but not rendered, same as the FBX
-  // version's fallback.
+  // BUTTON OUTLINES.glb: the full history behind this file, since it took 3 rounds to get
+  // the baked outline shell actually rendering correctly --
+  //  1. BUTTON MODEL WITH OUTLINE.fbx (the FBX version of this same model): BackSide culling
+  //     (the same technique outlineMat's own inverted-hull shell already used successfully)
+  //     rendered the base correctly as a thin rim, but the exterior/cap came out solid black
+  //     almost everywhere, and even within the exterior alone, different faces disagreed.
+  //  2. First glTF export of the same, unedited Blender mesh: identical failure, same parts
+  //     affected -- since FBX and glTF are 2 unrelated export pipelines, both reproducing the
+  //     same broken result ruled out "export format quirk" and confirmed the winding/normals
+  //     problem lived in the outline shell's own mesh data in Blender.
+  //  3. This file: the user recalculated normals on the outline shell in Blender and
+  //     re-exported. Retested live with the SAME BackSide setting that partially worked
+  //     before -- now BackSide is wrong almost everywhere (the recalculation evidently
+  //     flipped the shell's winding uniformly, from inconsistent to consistent-but-reversed).
+  //     Switching to FrontSide (bakedOutlineMat's own current setting) finally rendered every
+  //     part correctly, verified across all 4 parts, the full 14x14 default grid, both dark
+  //     and light ground colors, and a real click.
   //
   // Structurally different from the FBX too: instead of one mesh per part with 2 material
   // GROUPS, glTF exported 8 separate MESH objects -- one pair per part, name-suffixed "_1"
@@ -1009,6 +1028,12 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
   function refreshOutlines() {
     outlineMat.color.set(settings.outlineColor);
+    // bakedOutlineMat's shell is authored into the model itself, not one of this project's
+    // own toggleable outline techniques (Geometry/OutlinePass, both governed by
+    // outlineEnabled below) -- it stays visible regardless of that toggle, same spirit as
+    // the base/button colors being part of the model's own look. Still follows the shared
+    // outlineColor setting so all outline mechanisms stay visually consistent.
+    bakedOutlineMat.color.set(settings.outlineColor);
     var useChildMeshes = settings.outlineEnabled && !settings.outlineUsePostprocessing;
     cells.forEach(function (c) {
       c.outlineMeshes.forEach(function (o) {
@@ -1128,6 +1153,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         var baseMesh = new THREE.Mesh(modelGeo.base, baseMat);
         baseMesh.scale.set(settings.baseRadius, settings.baseHeight, settings.baseRadius);
         group.add(baseMesh);
+        if (outlineGeo.base) baseMesh.add(new THREE.Mesh(outlineGeo.base, bakedOutlineMat));
 
         var extMesh = new THREE.Mesh(extGeo, buttonMat);
         group.add(extMesh);
@@ -1139,12 +1165,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         var exteriorMesh = new THREE.Mesh(modelGeo.exterior, buttonMat);
         exteriorMesh.userData.isButton = true;
         capGroup.add(exteriorMesh);
+        if (outlineGeo.exterior) exteriorMesh.add(new THREE.Mesh(outlineGeo.exterior, bakedOutlineMat));
 
         var unpressedMesh = new THREE.Mesh(modelGeo.unpressed, buttonMat);
         capGroup.add(unpressedMesh);
+        if (outlineGeo.unpressed) unpressedMesh.add(new THREE.Mesh(outlineGeo.unpressed, bakedOutlineMat));
 
         var pressedMesh = new THREE.Mesh(modelGeo.pressed, buttonMat);
         capGroup.add(pressedMesh);
+        if (outlineGeo.pressed) pressedMesh.add(new THREE.Mesh(outlineGeo.pressed, bakedOutlineMat));
 
         var cell = {
           group: group, baseMesh: baseMesh, capGroup: capGroup,

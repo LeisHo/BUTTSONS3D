@@ -961,6 +961,52 @@ Verified: fresh reload (new tab) shows the full default grid rendering
 correctly, no console errors, real click still functions.
 
 --------------------------------------------------------------------------------
+2026-09-06 -- 02:10 AM - 02:25 AM EDT
+
+User recalculated normals on the outline shell in Blender (per the previous
+round's specific suggestion) and re-exported BUTTON OUTLINES.glb, asking to
+try again.
+
+THE BAKED OUTLINE NOW WORKS. Confirmed the new file was actually being
+loaded (not a stale cache -- checked the response's Last-Modified header
+and byte count directly against the file on disk) before concluding
+anything. Re-tested with the same BackSide setting that had partially
+worked in the very first FBX attempt: this time it's wrong almost
+everywhere -- the recalculation evidently flipped the shell's winding
+uniformly (from inconsistent-per-face to consistent-but-reversed).
+Switched to FrontSide and it rendered correctly across all 4 parts on the
+first try. Verified thoroughly before committing to the change: full
+default 14x14 grid, both the default dark and a lighter ground color (no
+white artifacts anywhere), a real click, and (separately) that it doesn't
+visually conflict with either the existing Geometry-mode procedural
+outline (both active together still looks like one clean outline, no
+z-fighting) or the OutlinePass screen-space toggle (co-exists fine,
+OutlinePass's own known diagonal-merge limitation is unaffected either
+way).
+
+Wired it in for real this time: bakedOutlineMat (FrontSide, following the
+shared outlineColor setting) added as a child of each of the 4 real parts,
+using the authored outlineGeo shells extracted in the previous 2 rounds'
+work (no changes needed there -- extraction/identification was already
+correct, only the rendering side was ever broken). Made it always-visible
+regardless of the outlineEnabled toggle, since it's now authored into the
+model itself rather than being one of this project's own outline
+techniques -- same treatment as the base/button colors being part of the
+model's own look, not a toggleable effect layered on top.
+
+This closes out a genuine multi-round arc: FBX with inconsistent per-face
+winding (broken) -> glTF re-export of the same unedited mesh (broken the
+same way, ruling out export format as the cause) -> glTF re-export after
+Blender-side normals recalculation (works, with the culling side flipped
+from what partially worked before). Rewrote the in-code history comments
+to tell this whole story in one place rather than leaving 2 separate
+"still broken" comments from the earlier rounds standing uncorrected.
+
+Verified: fresh tab, full default grid, no console errors, real click
+functions, both outline techniques (Geometry, OutlinePass) still coexist
+correctly alongside the now-working baked outline.
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
