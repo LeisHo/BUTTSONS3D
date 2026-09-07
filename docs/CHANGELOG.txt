@@ -2163,6 +2163,54 @@ strong negative result (no hole found) that narrows the remaining
 hypothesis space rather than confirming a specific cause]
 
 --------------------------------------------------------------------------------
+2026-09-07 -- 12:04 AM - 12:10 AM EDT (6m03s)
+
+User: "i reexported the model. updaet and push" -- routine re-export,
+following directly from the prior turn's discussion where the user gave
+their opinion that the artifact is backface culling on the base's
+inward-curving bottom (explicitly asked not to act on it yet, just to
+give an opinion, which was given: agreed this is now the most plausible
+remaining theory given the concave-orientation blind spot in this
+session's own normals check and the single-button limitation of the
+prior raycasting test).
+
+Verified live before committing: fresh tab, no console errors beyond the
+expected local GET-fallback 404. Triangle counts changed meaningfully
+(base 940 -> 984, exterior 358 -> 712 -- nearly doubled), and the base's
+own local bottom now sits exactly at y=0 (previously ~-0.025) -- all
+consistent with the user having added real geometry detail, plausibly at
+the concave undercut just discussed.
+
+Re-ran 2 of this session's own diagnostics against the new export rather
+than skipping straight to a routine commit, since this re-export is
+plausibly a direct response to the ongoing artifact investigation:
+- Winding-consistency check (authored normal vs. geometric winding):
+  still 100% agreement (984/984 base, 712/712 exterior, every bottom-band
+  triangle included) -- expected either way, since this check cannot
+  distinguish correct orientation from a globally-inverted-but-internally-
+  consistent patch, exactly the blind spot already identified for concave
+  geometry.
+- Analytic raycasting sweep, this time addressing last round's own
+  acknowledged gap (only 1 button tested): checked the 8 camera-nearest
+  cells at the user's reported artifact camera/ground settings, ~2,250
+  rays each. 7 of 8 showed zero misses; the 8th showed rays landing on a
+  NEIGHBORING button's mesh rather than this cell's own -- confirmed via
+  hit-object inspection to be ordinary occlusion (a nearer button blocking
+  the ray), not a gap reaching the ground or empty space. Still no
+  analytically-detectable hole anywhere tested on this export.
+
+Committed and pushed the re-exported glb alone as 650df8c -- no code
+changes.
+
+[Shape: routine asset re-export + verification (established pattern this
+session), extended with 2 already-proven diagnostics rather than a bare
+visual check, since the re-export is directly relevant to open
+investigation; Files: 1 (data/BUTTON OUTLINES.glb) + 1 CHANGELOG entry;
+Research: none beyond direct geometry/raycasting inspection; Confidence:
+HIGH going in (routine task), resolved with the routine push done and 2
+more data points logged for the still-open artifact question]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
