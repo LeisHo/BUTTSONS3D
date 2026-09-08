@@ -25,6 +25,15 @@
     --dev-bg-color: #0f1014;
     --dev-title-color: #9fd3ff;
     --dev-text-color: #e6e6e6;
+    /* Added per TEMPLATE_DEV_PANEL.html's own "Dev Panel" settings group (CLAUDE.md 12i) --
+       defaults here match what the panel already rendered as of the prior (hardcoded) visual
+       styling pass, so exposing these as real settings doesn't itself change the current look. */
+    --dev-accent-color: #00ffff;
+    --dev-slider-color: #3b82f6;
+    --dev-panel-font-family: 'Segoe UI', Arial, sans-serif;
+    --dev-button-text-border: 0px;
+    --dev-button-height: 22px;
+    --dev-scroll-strength: 1;
   }
   #sceneCanvas {
     position: fixed;
@@ -52,12 +61,13 @@
   /* ---- Dev panel (mechanics ported from the BUTTSONS project's own dev panel; visual
      styling ported from J:\CLAUDE\PROJECTS\.claude\TEMPLATE_DEV_PANEL.html's own cyan-
      accented "dev console" look, per direct request -- CLAUDE.md 12's own standard template.
-     --dev-accent-color is intentionally NOT a user-tunable setting like the other --dev-*
-     variables above: the template hardcodes this exact value (#0ff) as its own visual
-     signature throughout (buttons, tabs, section-title tint, resize-handle grips, slider
-     thumb, scrollbar), so it's kept fixed here to match the template precisely rather than
-     expanding the settings schema, per this round's own "don't overwrite our groups or
-     settings" instruction. ---- */
+     --dev-accent-color/--dev-slider-color/--dev-panel-font-family/--dev-button-text-border/
+     --dev-button-height/--dev-scroll-strength are now real settings in the "Dev Panel" group
+     (per a direct follow-up request: "include all Dev Panel settings per the template"),
+     matching every control TEMPLATE_DEV_PANEL.html's own DEVPANEL_STYLE_CONTROLS defines
+     except "Enable Label Rename Mode" -- that one toggles a whole inline label-rename FEATURE
+     (openDevTextEditFor et al.) this project never ported, so a checkbox for it would be dead
+     UI; left out rather than shipped non-functional. ---- */
   body:not(.dev-enabled) #devPanel { display: none !important; }
   body.dev-hidden #devPanel { display: none !important; }
 
@@ -67,9 +77,9 @@
     flex-direction: column;
     background: var(--dev-bg-color);
     opacity: var(--dev-panel-opacity);
-    border-left: 2px solid #0ff;
+    border-left: 2px solid var(--dev-accent-color);
     color: var(--dev-text-color);
-    font: var(--dev-body-font-size)/1.4 system-ui, sans-serif;
+    font: var(--dev-body-font-size)/1.4 var(--dev-panel-font-family);
     z-index: 1000;
     min-width: 260px;
     min-height: 160px;
@@ -92,12 +102,14 @@
     color: var(--dev-title-color);
   }
   #devPanel .dev-collapse-btn {
-    background: #0ff;
+    background: var(--dev-accent-color);
     color: #000;
     border: none;
     border-radius: 3px;
     width: 22px;
-    min-height: 22px;
+    min-height: var(--dev-button-height);
+    padding-top: var(--dev-button-text-border);
+    padding-bottom: var(--dev-button-text-border);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -105,7 +117,6 @@
     font-size: 13px;
     font-weight: 700;
     line-height: 1;
-    padding: 0;
     flex-shrink: 0;
   }
   #devPanel .dev-collapse-btn:hover { filter: brightness(1.3); }
@@ -123,19 +134,22 @@
   .dev-tab-btn {
     flex: 1;
     background: #222;
-    border: 1px solid #0ff;
+    border: 1px solid var(--dev-accent-color);
     border-radius: 3px;
-    color: #0ff;
+    color: var(--dev-accent-color);
     font-size: var(--dev-tab-font-size);
     font-weight: 700;
-    padding: 6px 0;
+    min-height: var(--dev-button-height);
+    padding-top: var(--dev-button-text-border);
+    padding-bottom: var(--dev-button-text-border);
     cursor: pointer;
   }
   #devPanel.tab-desktop .dev-tab-btn[data-tab="desktop"],
   #devPanel.tab-mobile .dev-tab-btn[data-tab="mobile"] {
-    background: #0ff;
+    background: var(--dev-accent-color);
     color: #000;
   }
+  #devPanel.dev-caps-tab-text .dev-tab-btn { text-transform: uppercase; }
   .dev-actions {
     display: flex;
     gap: 6px;
@@ -144,26 +158,30 @@
   }
   .dev-actions button {
     flex: 1;
-    background: #0ff;
+    background: var(--dev-accent-color);
     border: none;
     color: #000;
     font-weight: 700;
     border-radius: 3px;
-    padding: 5px 0;
+    min-height: var(--dev-button-height);
+    padding-top: var(--dev-button-text-border);
+    padding-bottom: var(--dev-button-text-border);
     cursor: pointer;
     font-size: var(--dev-body-font-size);
   }
   .dev-actions button:hover { filter: brightness(1.3); }
+  #devPanel.dev-caps-button-text .dev-actions button,
+  #devPanel.dev-caps-button-text .dev-collapse-btn { text-transform: uppercase; }
   #devGroups {
     overflow-y: auto;
     flex: 1;
     min-height: 0;
-    scrollbar-color: #0ff #000;
+    scrollbar-color: var(--dev-accent-color) #000;
     scrollbar-width: thin;
   }
   #devGroups::-webkit-scrollbar { width: 10px; }
   #devGroups::-webkit-scrollbar-track { background: #000; }
-  #devGroups::-webkit-scrollbar-thumb { background: #0ff; border-radius: 5px; }
+  #devGroups::-webkit-scrollbar-thumb { background: var(--dev-accent-color); border-radius: 5px; }
   /* Was opacity:0.4 -- against this panel's near-black background that read as the dragged
      row/group nearly vanishing ("becomes dark") rather than as a clear "this is what you're
      moving" indicator. Full opacity + a light tint + an outline in the panel's own accent
@@ -186,9 +204,10 @@
   .dev-group-title {
     font-size: var(--dev-group-title-font-size);
     font-weight: 700;
-    color: #0ff;
+    color: var(--dev-accent-color);
     flex: 1;
   }
+  #devPanel.dev-caps-group-names .dev-group-title { text-transform: uppercase; }
   .dev-group-caret { opacity: 0.6; font-size: 10px; }
   .dev-group.collapsed .dev-group-body { display: none; }
   .dev-group-body { padding: 6px 8px; }
@@ -209,23 +228,33 @@
     display: block;
     margin-bottom: 2px;
   }
+  #devPanel.dev-caps-settings-text .dev-setting-label { text-transform: uppercase; }
   .dev-controls { display: flex; align-items: center; gap: 6px; }
-  .dev-controls input[type="range"] { flex: 1; min-width: 0; accent-color: #3b82f6; }
+  .dev-controls input[type="range"] { flex: 1; min-width: 0; accent-color: var(--dev-slider-color); }
+  .dev-select {
+    background: #222;
+    color: var(--dev-accent-color);
+    border: 1px solid var(--dev-accent-color);
+    border-radius: 3px;
+    padding: 4px;
+    font: inherit;
+    cursor: pointer;
+  }
   .dev-value {
     font-size: var(--dev-body-font-size);
     min-width: 3.5em;
     text-align: right;
-    color: #0ff;
+    color: var(--dev-accent-color);
     cursor: text;
     padding: 1px 3px;
     border-radius: 3px;
   }
-  .dev-value:hover { outline: 1px solid #0ff; }
+  .dev-value:hover { outline: 1px solid var(--dev-accent-color); }
   .dev-value input {
     width: 4.5em;
     background: #000;
-    color: #0ff;
-    border: 1px solid #0ff;
+    color: var(--dev-accent-color);
+    border: 1px solid var(--dev-accent-color);
     font: inherit;
   }
   .dev-camera-presets { padding: 6px 0 2px; }
@@ -236,7 +265,7 @@
     overflow-y: auto;
     background: #000;
     color: var(--dev-text-color);
-    border: 1px solid #0ff;
+    border: 1px solid var(--dev-accent-color);
     font: inherit;
     font-size: var(--dev-body-font-size);
     box-sizing: border-box;
@@ -246,7 +275,7 @@
   .dev-color-row input[type="color"] {
     width: 28px;
     height: 22px;
-    border: 1px solid #0ff;
+    border: 1px solid var(--dev-accent-color);
     border-radius: 3px;
     background: none;
     padding: 0;
@@ -266,7 +295,7 @@
   .dev-resize-edge.e, .dev-resize-edge.w { top: 16px; bottom: 16px; width: 20px; cursor: ew-resize; }
   .dev-resize-edge.e { right: -6px; }
   .dev-resize-edge.w { left: -6px; }
-  .dev-resize-edge::after { content: ''; position: absolute; background: #0ff; opacity: 0.7; border-radius: 1px; }
+  .dev-resize-edge::after { content: ''; position: absolute; background: var(--dev-accent-color); opacity: 0.7; border-radius: 1px; }
   .dev-resize-edge.n::after, .dev-resize-edge.s::after {
     left: 50%; top: 50%; width: 14px; height: 3px; transform: translate(-50%, -50%);
   }
@@ -284,10 +313,10 @@
   .dev-resize-corner.sw::after { bottom: 8px; left: 8px; }
   .dev-resize-corner.se::after { bottom: 8px; right: 8px; }
   .dev-resize-corner.nw::after, .dev-resize-corner.se::after {
-    background-image: repeating-linear-gradient(135deg, #0ff 0 2px, transparent 2px 6px);
+    background-image: repeating-linear-gradient(135deg, var(--dev-accent-color) 0 2px, transparent 2px 6px);
   }
   .dev-resize-corner.ne::after, .dev-resize-corner.sw::after {
-    background-image: repeating-linear-gradient(45deg, #0ff 0 2px, transparent 2px 6px);
+    background-image: repeating-linear-gradient(45deg, var(--dev-accent-color) 0 2px, transparent 2px 6px);
   }
 </style>
 </head>
@@ -496,6 +525,19 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     devBgColor: "#0f1014",
     devTitleColor: "#9fd3ff",
     devTextColor: "#e6e6e6",
+    // Added per TEMPLATE_DEV_PANEL.html's own full "Dev Panel" settings group -- defaults
+    // match what the panel already rendered as of the prior (hardcoded) visual pass, so
+    // exposing these doesn't itself change anything until the user actually adjusts one.
+    devAccentColor: "#00ffff",
+    devSliderColor: "#3b82f6",
+    devPanelFontFamily: "'Segoe UI', Arial, sans-serif",
+    devButtonTextBorder: 0,
+    devButtonHeight: 22,
+    devScrollStrength: 1,
+    devCapsButtonText: false,
+    devCapsTabText: false,
+    devCapsGroupNames: false,
+    devCapsSettingsText: false,
 
     _panelGeometryDesktop: { top: 12, left: 1236, width: 300, height: 560 },
     _panelGeometryMobile: null,
@@ -505,7 +547,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     ], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraZoom }] -- position+FOV+zoom only, no yaw/pitch/target (matches OKCILCOKCID: those are derived, not part of a preset's stored identity)
     _groupOrder: ["devpanel", "grid", "button", "lighting", "camera", "scene", "shading", "debug"],
     _itemOrderByGroup: {
-      devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor"],
+      devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devButtonTextBorder", "devButtonHeight", "devScrollStrength", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor", "devAccentColor", "devSliderColor", "devPanelFontFamily", "devCapsButtonText", "devCapsTabText", "devCapsGroupNames", "devCapsSettingsText"],
       grid: ["colCount", "rowCount", "colSpacing", "rowSpacing", "rowXOffset", "cumulativeRowOffset"],
       button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "extensionRadiusMargin", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
@@ -582,7 +624,11 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "devGroupTitleFontSize", label: "Collapsible Group Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-group-title-font-size" },
     { key: "devSettingTitleFontSize", label: "Settings Title Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-setting-title-font-size" },
     { key: "devBodyFontSize", label: "Body Text Font Size", min: 8, max: 24, step: 0.5, unit: "px", cssVar: "--dev-body-font-size" },
-    { key: "devPanelOpacity", label: "Dev Panel Opacity", min: 0.1, max: 1, step: 0.01, unit: "", cssVar: "--dev-panel-opacity" }
+    { key: "devPanelOpacity", label: "Dev Panel Opacity", min: 0.1, max: 1, step: 0.01, unit: "", cssVar: "--dev-panel-opacity" },
+    // Remaining Dev Panel sliders, per TEMPLATE_DEV_PANEL.html's own DEVPANEL_STYLE_CONTROLS.
+    { key: "devButtonTextBorder", label: "Button Text Border", min: 0, max: 20, step: 1, unit: "px", cssVar: "--dev-button-text-border" },
+    { key: "devButtonHeight", label: "Button Height", min: 12, max: 60, step: 1, unit: "px", cssVar: "--dev-button-height" },
+    { key: "devScrollStrength", label: "Scroll Strength", min: 0.2, max: 5, step: 0.1, unit: "(x)", cssVar: "--dev-scroll-strength" }
   ];
 
   var CHECKBOX_CONFIG = [
@@ -599,7 +645,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     // while leaving the camera sliders fully functional -- for framing a shot once and then
     // clicking buttons without an accidental drag disturbing it. See its own lockCamera-flag
     // handling in applySetting() and the checkbox's own change handler.
-    { key: "lockCamera", label: "Lock Camera", lockCamera: true }
+    { key: "lockCamera", label: "Lock Camera", lockCamera: true },
+    // 4 independent capitalize toggles (per TEMPLATE_DEV_PANEL.html's own DEV_PANEL_CAPS_CLASS_MAP
+    // and this project family's own "decompose, don't bundle" convention) -- capsClass names the
+    // class toggled on #devPanel; see its own handling in the checkbox change listener and
+    // applyAllSettings() below.
+    { key: "devCapsButtonText", label: "Capitalize Button Text", capsClass: "dev-caps-button-text" },
+    { key: "devCapsTabText", label: "Capitalize Tab Text", capsClass: "dev-caps-tab-text" },
+    { key: "devCapsGroupNames", label: "Capitalize Group Names", capsClass: "dev-caps-group-names" },
+    { key: "devCapsSettingsText", label: "Capitalize Settings Text", capsClass: "dev-caps-settings-text" }
   ];
 
   var COLOR_CONFIG = [
@@ -609,13 +663,27 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "outlineColor", label: "Outline Color", outline: true },
     { key: "devBgColor", label: "Dev Panel Background Color", cssVar: "--dev-bg-color" },
     { key: "devTitleColor", label: "Dev Panel Title Text Color", cssVar: "--dev-title-color" },
-    { key: "devTextColor", label: "Dev Panel Non-Title Text Color", cssVar: "--dev-text-color" }
+    { key: "devTextColor", label: "Dev Panel Non-Title Text Color", cssVar: "--dev-text-color" },
+    { key: "devAccentColor", label: "Dev Panel Accent Color (Buttons/UI)", cssVar: "--dev-accent-color" },
+    { key: "devSliderColor", label: "Dev Panel Slider Color", cssVar: "--dev-slider-color" }
+  ];
+
+  var SELECT_CONFIG = [
+    { key: "devPanelFontFamily", label: "Dev Panel Font (All Text)", cssVar: "--dev-panel-font-family", options: [
+      { value: "monospace", text: "Monospace" },
+      { value: "Arial, Helvetica, sans-serif", text: "Arial" },
+      { value: "'Segoe UI', Arial, sans-serif", text: "Segoe UI" },
+      { value: "Verdana, Geneva, sans-serif", text: "Verdana" },
+      { value: "'Trebuchet MS', Arial, sans-serif", text: "Trebuchet MS" },
+      { value: "Calibri, Arial, sans-serif", text: "Calibri" }
+    ] }
   ];
 
   var CONTROL_BY_KEY = {};
   SLIDER_CONFIG.forEach(function (cfg) { cfg.type = "slider"; CONTROL_BY_KEY[cfg.key] = cfg; });
   CHECKBOX_CONFIG.forEach(function (cfg) { cfg.type = "checkbox"; CONTROL_BY_KEY[cfg.key] = cfg; });
   COLOR_CONFIG.forEach(function (cfg) { cfg.type = "color"; CONTROL_BY_KEY[cfg.key] = cfg; });
+  SELECT_CONFIG.forEach(function (cfg) { cfg.type = "select"; CONTROL_BY_KEY[cfg.key] = cfg; });
 
   function deepClone(obj) { return JSON.parse(JSON.stringify(obj)); }
 
@@ -748,8 +816,17 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   var MOBILE_MEDIA_QUERY = matchMedia("(max-width: 767px)");
   function isMobileActive() { return MOBILE_MEDIA_QUERY.matches; }
 
+  // Bugfix found while adding new px-based cssVar sliders for this round: this previously set
+  // the custom property to a bare unitless number (e.g. "13"), which is invalid wherever the
+  // CSS actually consumes it as a <length> (font-size: var(--dev-title-font-size) with a
+  // unitless value silently fails and falls back to the browser default, NOT the px-suffixed
+  // value in :root's own initial declaration) -- confirmed live: the "Dev Panel Title Font
+  // Size" slider rendered no visible effect at all before this fix. Appending "px" only when
+  // cfg.unit is exactly "px" (opacity/scroll-strength stay bare numbers; color pickers never
+  // go through this path at all) fixes every existing font-size slider along with the new
+  // px-based ones added this round.
   function applyCssVar(cfg, value) {
-    if (cfg.cssVar) root.style.setProperty(cfg.cssVar, value);
+    if (cfg.cssVar) root.style.setProperty(cfg.cssVar, cfg.unit === "px" ? value + "px" : value);
   }
 
   // ---- Three.js scene ----
@@ -2078,10 +2155,16 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     CHECKBOX_CONFIG.forEach(function (cfg) {
       var input = document.getElementById("check-" + cfg.key);
       if (input) input.checked = settings[cfg.key];
+      if (cfg.capsClass) devPanel.classList.toggle(cfg.capsClass, settings[cfg.key]);
     });
     COLOR_CONFIG.forEach(function (cfg) {
       applyCssVar(cfg, settings[cfg.key]);
       var input = document.getElementById("color-" + cfg.key);
+      if (input) input.value = settings[cfg.key];
+    });
+    SELECT_CONFIG.forEach(function (cfg) {
+      applyCssVar(cfg, settings[cfg.key]);
+      var input = document.getElementById("select-" + cfg.key);
       if (input) input.value = settings[cfg.key];
     });
     applyLightSettings();
@@ -2146,6 +2229,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         if (cfg.visibility) refreshDebugVisibility();
         if (cfg.regen) regenerateGrid();
         if (cfg.lockCamera) applyLockCamera();
+        if (cfg.capsClass) devPanel.classList.toggle(cfg.capsClass, checkbox.checked);
       });
       label.appendChild(checkbox);
       label.appendChild(document.createTextNode(" " + cfg.label));
@@ -2173,6 +2257,32 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       main.appendChild(colorLabel);
       main.appendChild(colorInput);
       row.appendChild(main);
+      return row;
+    }
+
+    if (cfg.type === "select") {
+      var selMain = document.createElement("div");
+      selMain.className = "dev-row-main";
+      var selLabel = document.createElement("span");
+      selLabel.className = "dev-setting-label";
+      selLabel.textContent = cfg.label;
+      var select = document.createElement("select");
+      select.className = "dev-select";
+      select.id = "select-" + cfg.key;
+      cfg.options.forEach(function (opt) {
+        var option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.text;
+        select.appendChild(option);
+      });
+      select.value = settings[cfg.key];
+      select.addEventListener("change", function () {
+        settings[cfg.key] = select.value;
+        applyCssVar(cfg, select.value);
+      });
+      selMain.appendChild(selLabel);
+      selMain.appendChild(select);
+      row.appendChild(selMain);
       return row;
     }
 
@@ -2512,6 +2622,15 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   buildPanelContent();
   initSortable();
   initPanelDragResize();
+  // Dev Panel "Scroll Strength" setting (per TEMPLATE_DEV_PANEL.html's own pattern) --
+  // multiplies wheel-scroll delta inside the settings list; 1 (the default) leaves native
+  // browser scrolling untouched entirely rather than intercepting the event for a no-op.
+  groupsHost.addEventListener("wheel", function (e) {
+    var strength = settings.devScrollStrength;
+    if (strength === 1) return;
+    e.preventDefault();
+    groupsHost.scrollTop += e.deltaY * strength;
+  }, { passive: false });
   applyPanelGeometry();
   animate();
   // Grid/material/camera/light setup waits on the button model finishing its async load
