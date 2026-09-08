@@ -134,11 +134,6 @@
     font-size: var(--dev-body-font-size);
   }
   .dev-actions button:hover { background: #33374a; }
-  #devSaveStatus {
-    padding: 0 8px 4px;
-    font-size: 10px;
-    opacity: 0.6;
-  }
   #devGroups {
     overflow-y: auto;
     flex: 1;
@@ -270,7 +265,6 @@
       <button id="btnSave">Save Settings</button>
       <button id="btnReset">Reset</button>
     </div>
-    <div id="devSaveStatus">Save writes to data/processed/dev-panel-settings.json (git-tracked) via the local dev server; falls back to browser-local storage when opened as a file.</div>
     <div id="devGroups"></div>
   </div>
 </div>
@@ -2435,11 +2429,20 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     saveSettingsToDefault(this);
   });
 
-  document.getElementById("btnReset").addEventListener("click", function () {
+  // Shared by the Reset button and the "R" keyboard shortcut (CLAUDE.md 12d).
+  function resetToSavedDefaults() {
     settings = deepClone(savedDefaults);
     buildPanelContent();
     applyAllSettings();
     applyPanelGeometry();
+  }
+  document.getElementById("btnReset").addEventListener("click", resetToSavedDefaults);
+  document.addEventListener("keydown", function (e) {
+    if (e.key.toLowerCase() !== "r") return;
+    var t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    if (!document.body.classList.contains("dev-enabled")) return;
+    resetToSavedDefaults();
   });
 
   MOBILE_MEDIA_QUERY.addEventListener("change", function () {
