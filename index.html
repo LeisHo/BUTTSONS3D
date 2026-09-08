@@ -49,7 +49,15 @@
   }
   #loadingOverlay.hidden { display: none; }
 
-  /* ---- Dev panel (mechanics ported from the BUTTSONS project's own dev panel) ---- */
+  /* ---- Dev panel (mechanics ported from the BUTTSONS project's own dev panel; visual
+     styling ported from J:\CLAUDE\PROJECTS\.claude\TEMPLATE_DEV_PANEL.html's own cyan-
+     accented "dev console" look, per direct request -- CLAUDE.md 12's own standard template.
+     --dev-accent-color is intentionally NOT a user-tunable setting like the other --dev-*
+     variables above: the template hardcodes this exact value (#0ff) as its own visual
+     signature throughout (buttons, tabs, section-title tint, resize-handle grips, slider
+     thumb, scrollbar), so it's kept fixed here to match the template precisely rather than
+     expanding the settings schema, per this round's own "don't overwrite our groups or
+     settings" instruction. ---- */
   body:not(.dev-enabled) #devPanel { display: none !important; }
   body.dev-hidden #devPanel { display: none !important; }
 
@@ -59,8 +67,7 @@
     flex-direction: column;
     background: var(--dev-bg-color);
     opacity: var(--dev-panel-opacity);
-    border: 1px solid #333a4a;
-    border-radius: 6px;
+    border-left: 2px solid #0ff;
     color: var(--dev-text-color);
     font: var(--dev-body-font-size)/1.4 system-ui, sans-serif;
     z-index: 1000;
@@ -74,24 +81,34 @@
     align-items: center;
     justify-content: space-between;
     padding: 6px 8px;
-    cursor: move;
-    background: #1c1e24;
+    cursor: grab;
+    background: rgba(0, 0, 0, 0.95);
     user-select: none;
   }
+  #devPanel .dev-titlebar:active { cursor: grabbing; }
   #devPanel .dev-title {
     font-size: var(--dev-title-font-size);
     font-weight: 700;
     color: var(--dev-title-color);
   }
   #devPanel .dev-collapse-btn {
-    background: none;
+    background: #0ff;
+    color: #000;
     border: none;
-    color: var(--dev-text-color);
+    border-radius: 3px;
+    width: 22px;
+    min-height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
     font-size: 13px;
+    font-weight: 700;
     line-height: 1;
-    padding: 2px 6px;
+    padding: 0;
+    flex-shrink: 0;
   }
+  #devPanel .dev-collapse-btn:hover { filter: brightness(1.3); }
   #devPanel .dev-body {
     display: flex;
     flex-direction: column;
@@ -100,22 +117,24 @@
   }
   .dev-tabs {
     display: flex;
-    border-bottom: 1px solid #262932;
+    gap: 4px;
+    padding: 6px 8px 0;
   }
   .dev-tab-btn {
     flex: 1;
-    background: none;
-    border: none;
-    color: var(--dev-text-color);
+    background: #222;
+    border: 1px solid #0ff;
+    border-radius: 3px;
+    color: #0ff;
     font-size: var(--dev-tab-font-size);
+    font-weight: 700;
     padding: 6px 0;
     cursor: pointer;
-    opacity: 0.6;
   }
   #devPanel.tab-desktop .dev-tab-btn[data-tab="desktop"],
   #devPanel.tab-mobile .dev-tab-btn[data-tab="mobile"] {
-    opacity: 1;
-    border-bottom: 2px solid var(--dev-title-color);
+    background: #0ff;
+    color: #000;
   }
   .dev-actions {
     display: flex;
@@ -125,20 +144,26 @@
   }
   .dev-actions button {
     flex: 1;
-    background: #262932;
-    border: 1px solid #333a4a;
-    color: var(--dev-text-color);
-    border-radius: 4px;
+    background: #0ff;
+    border: none;
+    color: #000;
+    font-weight: 700;
+    border-radius: 3px;
     padding: 5px 0;
     cursor: pointer;
     font-size: var(--dev-body-font-size);
   }
-  .dev-actions button:hover { background: #33374a; }
+  .dev-actions button:hover { filter: brightness(1.3); }
   #devGroups {
     overflow-y: auto;
     flex: 1;
     min-height: 0;
+    scrollbar-color: #0ff #000;
+    scrollbar-width: thin;
   }
+  #devGroups::-webkit-scrollbar { width: 10px; }
+  #devGroups::-webkit-scrollbar-track { background: #000; }
+  #devGroups::-webkit-scrollbar-thumb { background: #0ff; border-radius: 5px; }
   /* Was opacity:0.4 -- against this panel's near-black background that read as the dragged
      row/group nearly vanishing ("becomes dark") rather than as a clear "this is what you're
      moving" indicator. Full opacity + a light tint + an outline in the panel's own accent
@@ -150,14 +175,18 @@
     align-items: center;
     gap: 6px;
     padding: 6px 8px;
-    background: #1c1e24;
+    margin: 6px 8px 0;
+    background: rgba(0, 255, 255, 0.1);
+    border-radius: 3px;
     cursor: pointer;
     user-select: none;
   }
+  .dev-group-header:hover { background: rgba(0, 255, 255, 0.2); }
   .dev-group-header .drag-grip { cursor: grab; opacity: 0.5; }
   .dev-group-title {
     font-size: var(--dev-group-title-font-size);
-    font-weight: 600;
+    font-weight: 700;
+    color: #0ff;
     flex: 1;
   }
   .dev-group-caret { opacity: 0.6; font-size: 10px; }
@@ -181,21 +210,22 @@
     margin-bottom: 2px;
   }
   .dev-controls { display: flex; align-items: center; gap: 6px; }
-  .dev-controls input[type="range"] { flex: 1; min-width: 0; }
+  .dev-controls input[type="range"] { flex: 1; min-width: 0; accent-color: #3b82f6; }
   .dev-value {
     font-size: var(--dev-body-font-size);
     min-width: 3.5em;
     text-align: right;
+    color: #0ff;
     cursor: text;
     padding: 1px 3px;
     border-radius: 3px;
   }
-  .dev-value:hover { background: rgba(255,255,255,0.08); }
+  .dev-value:hover { outline: 1px solid #0ff; }
   .dev-value input {
     width: 4.5em;
     background: #000;
-    color: var(--dev-text-color);
-    border: 1px solid #444;
+    color: #0ff;
+    border: 1px solid #0ff;
     font: inherit;
   }
   .dev-camera-presets { padding: 6px 0 2px; }
@@ -206,7 +236,7 @@
     overflow-y: auto;
     background: #000;
     color: var(--dev-text-color);
-    border: 1px solid #444;
+    border: 1px solid #0ff;
     font: inherit;
     font-size: var(--dev-body-font-size);
     box-sizing: border-box;
@@ -216,24 +246,49 @@
   .dev-color-row input[type="color"] {
     width: 28px;
     height: 22px;
-    border: none;
+    border: 1px solid #0ff;
+    border-radius: 3px;
     background: none;
     padding: 0;
     cursor: pointer;
   }
   .dev-checkbox-row label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 
-  /* Resize/move hit zones */
-  .dev-resize-edge { position: absolute; z-index: 2; }
-  .dev-resize-edge.n { top: -3px; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
-  .dev-resize-edge.s { bottom: -3px; left: 8px; right: 8px; height: 6px; cursor: ns-resize; }
-  .dev-resize-edge.e { right: -3px; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
-  .dev-resize-edge.w { left: -3px; top: 8px; bottom: 8px; width: 6px; cursor: ew-resize; }
-  .dev-resize-corner { position: absolute; z-index: 3; width: 10px; height: 10px; }
-  .dev-resize-corner.nw { top: -3px; left: -3px; cursor: nwse-resize; }
-  .dev-resize-corner.ne { top: -3px; right: -3px; cursor: nesw-resize; }
-  .dev-resize-corner.sw { bottom: -3px; left: -3px; cursor: nesw-resize; }
-  .dev-resize-corner.se { bottom: -3px; right: -3px; cursor: nwse-resize; }
+  /* Resize/move hit zones -- sized for real touch targets (20px, matching
+     TEMPLATE_DEV_PANEL.html's own real-device-tested convergence), with a visible cyan grip
+     indicator via ::after (a solid bar per edge, a diagonal-stripe pattern per corner
+     matching that corner's own resize diagonal) so the handles are discoverable, not just
+     an invisible cursor-change hit zone. */
+  .dev-resize-edge { position: absolute; z-index: 2; touch-action: none; }
+  .dev-resize-edge.n, .dev-resize-edge.s { left: 16px; right: 16px; height: 20px; cursor: ns-resize; }
+  .dev-resize-edge.n { top: -6px; }
+  .dev-resize-edge.s { bottom: -6px; }
+  .dev-resize-edge.e, .dev-resize-edge.w { top: 16px; bottom: 16px; width: 20px; cursor: ew-resize; }
+  .dev-resize-edge.e { right: -6px; }
+  .dev-resize-edge.w { left: -6px; }
+  .dev-resize-edge::after { content: ''; position: absolute; background: #0ff; opacity: 0.7; border-radius: 1px; }
+  .dev-resize-edge.n::after, .dev-resize-edge.s::after {
+    left: 50%; top: 50%; width: 14px; height: 3px; transform: translate(-50%, -50%);
+  }
+  .dev-resize-edge.e::after, .dev-resize-edge.w::after {
+    left: 50%; top: 50%; width: 3px; height: 14px; transform: translate(-50%, -50%);
+  }
+  .dev-resize-corner { position: absolute; z-index: 3; width: 20px; height: 20px; touch-action: none; }
+  .dev-resize-corner.nw { top: -6px; left: -6px; cursor: nwse-resize; }
+  .dev-resize-corner.ne { top: -6px; right: -6px; cursor: nesw-resize; }
+  .dev-resize-corner.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+  .dev-resize-corner.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+  .dev-resize-corner::after { content: ''; position: absolute; width: 7px; height: 7px; opacity: 0.7; }
+  .dev-resize-corner.nw::after { top: 8px; left: 8px; }
+  .dev-resize-corner.ne::after { top: 8px; right: 8px; }
+  .dev-resize-corner.sw::after { bottom: 8px; left: 8px; }
+  .dev-resize-corner.se::after { bottom: 8px; right: 8px; }
+  .dev-resize-corner.nw::after, .dev-resize-corner.se::after {
+    background-image: repeating-linear-gradient(135deg, #0ff 0 2px, transparent 2px 6px);
+  }
+  .dev-resize-corner.ne::after, .dev-resize-corner.sw::after {
+    background-image: repeating-linear-gradient(45deg, #0ff 0 2px, transparent 2px 6px);
+  }
 </style>
 </head>
 <body>
