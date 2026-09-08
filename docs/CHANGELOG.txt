@@ -2411,6 +2411,86 @@ control count/types before reading the template's JS), resolved with a
 clear, complete control list and a real incidental bugfix along the way]
 
 --------------------------------------------------------------------------------
+2026-09-08 -- 06:33 AM - 06:47 AM EDT (14m21s)
+
+User pushed back on the prior round's decision to skip "Enable Label
+Rename Mode": "wait why cant you give me the text edit mode" / "what do
+you mean it does nothing? it allows me to rename dev panel text" --
+correctly: it IS a real, useful feature (inline renaming of how a
+group/setting is DISPLAYED, without touching its underlying key or
+behavior), not a dead toggle. Implemented it properly this round.
+
+Read the template's own [JS-9] TEXT EDIT MODE section in full
+(openDevTextEditFor, applyDevTextOverrides, textEditModeEnabled) and
+ported it, finding BUTTSONS3D's own architecture actually makes this
+SIMPLER than the template's own version: the template needs a "cache the
+original text the first time it's seen" mechanism (devTextOriginalFor)
+because it mutates live DOM text in place with no separate source of
+truth to re-derive from; BUTTSONS3D already re-renders every label/title
+from an immutable source (GROUP_DEFS' def.title, CONTROL_BY_KEY's
+cfg.label) on every buildPanelContent()/renderControl() call, so the
+"original" is always just one property read away -- no caching needed.
+Likewise, BUTTSONS3D's rows and groups already carry stable dataset keys
+(row.dataset.key, groupEl.dataset.groupId) that the template had to
+compute via its own getSectionKey()/getDevLabelKey() helpers.
+
+Added:
+- Enable Label Rename Mode checkbox in the Dev Panel group.
+- settings._labelOverrides -- a plain groupId/cfg.key -> display-text
+  map. Renames are DISPLAY-ONLY; the underlying key never changes, so
+  nothing about a setting's behavior or wiring is touched. Persists for
+  free via the existing flat settings object (Save/Copy/Reset already
+  cover it) -- unlike the template's own localStorage-only
+  devTextOverrides, no separate persistence layer was needed.
+- labelTextFor(cfg)/groupTitleFor(def) -- override-or-original lookup,
+  used everywhere a label/title is set (slider, color, select, checkbox,
+  group title).
+- openLabelEditFor(el, key, original) -- opens an inline textarea over
+  the label; Enter or blur commits (typing the original text back, or
+  leaving it blank, clears the override rather than storing a redundant
+  copy); Escape cancels.
+- initLabelRenameMode() -- one delegated, capture-phase click listener
+  (same technique the template uses) so clicking a CHECKBOX row's label
+  text opens the rename editor without ALSO toggling the checkbox (a
+  native <label> click-activates its descendant input by default unless
+  the click is prevented before that fires).
+- buildPanelContent()'s group-header click handler now branches on
+  settings.devTextEditMode first, before its existing collapse-toggle
+  logic.
+- Checkbox rows' label went from a bare text node to a real
+  `.dev-setting-label` span (the same class every other control's own
+  label already used) -- needed to make it a uniform click target; the
+  existing flex `gap` on .dev-checkbox-row already spaced it correctly,
+  so no other visual change resulted.
+
+Verified live (after working through some initial test-script confusion
+from chaining synthetic .click() calls without letting real focus/blur
+settle between them -- resolved by testing each step in isolation and
+confirming with a proper blur dispatch, which matches how a real user's
+click-away naturally behaves): enabling the mode and clicking a group
+title opens the inline editor with collapse-toggle correctly suppressed;
+typed and committed a new group name AND a new setting-label name, both
+rendered correctly; confirmed the renamed group's normal collapse/expand
+still works once the mode is off again; confirmed clicking a checkbox's
+own label in rename mode opens the editor WITHOUT toggling the checkbox
+(checked state unchanged before/after, confirmed via a live change-event
+counter); confirmed the underlying slider (devTitleFontSize) stayed
+fully functional and its real key unchanged after only its DISPLAYED
+label was renamed, proving the override is genuinely display-only; Reset
+correctly reverted a renamed group back to its real name; no unintended
+settings-file changes from testing.
+
+[Shape: existing-mechanism extension (render-time override lookup, reusing
+already-established row/group dataset keys) plus one delegated click
+listener mirroring an already-proven template technique; Files: 1
+(index.html, +109/-7) + 1 CHANGELOG entry; Research: direct reading of
+TEMPLATE_DEV_PANEL.html's own [JS-9] Text Edit Mode section; Confidence:
+MEDIUM going in (self-contained feature, but genuinely new interaction
+surface not yet exercised in this codebase), resolved with a working,
+fully-verified feature after working through synthetic-event test
+confusion]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
