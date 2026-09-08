@@ -538,6 +538,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     devCapsTabText: false,
     devCapsGroupNames: false,
     devCapsSettingsText: false,
+    devTextEditMode: false,
+
+    // groupId/cfg.key -> display-text override, written by openLabelEditFor() when Label
+    // Rename Mode is on. The underlying group/setting key never changes -- only what's shown
+    // in the panel -- so nothing else reads or depends on this except labelTextFor()/
+    // groupTitleFor() at render time.
+    _labelOverrides: {},
 
     _panelGeometryDesktop: { top: 12, left: 1236, width: 300, height: 560 },
     _panelGeometryMobile: null,
@@ -547,7 +554,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     ], // [{ name, cameraX, cameraHeight, cameraDistance, cameraFov, cameraZoom }] -- position+FOV+zoom only, no yaw/pitch/target (matches OKCILCOKCID: those are derived, not part of a preset's stored identity)
     _groupOrder: ["devpanel", "grid", "button", "lighting", "camera", "scene", "shading", "debug"],
     _itemOrderByGroup: {
-      devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devButtonTextBorder", "devButtonHeight", "devScrollStrength", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor", "devAccentColor", "devSliderColor", "devPanelFontFamily", "devCapsButtonText", "devCapsTabText", "devCapsGroupNames", "devCapsSettingsText"],
+      devpanel: ["devTitleFontSize", "devTabFontSize", "devGroupTitleFontSize", "devSettingTitleFontSize", "devBodyFontSize", "devButtonTextBorder", "devButtonHeight", "devScrollStrength", "devPanelOpacity", "devBgColor", "devTitleColor", "devTextColor", "devAccentColor", "devSliderColor", "devPanelFontFamily", "devCapsButtonText", "devCapsTabText", "devCapsGroupNames", "devCapsSettingsText", "devTextEditMode"],
       grid: ["colCount", "rowCount", "colSpacing", "rowSpacing", "rowXOffset", "cumulativeRowOffset"],
       button: ["baseRadius", "baseHeight", "buttonRadius", "buttonHeight", "extensionRadiusMargin", "clickIntensity", "heightGainPerClick", "holdThresholdMs", "releaseMs"],
       lighting: ["ambientIntensity", "directionalIntensity", "lightAngleX", "lightAngleY", "lightAngleZ"],
@@ -653,7 +660,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     { key: "devCapsButtonText", label: "Capitalize Button Text", capsClass: "dev-caps-button-text" },
     { key: "devCapsTabText", label: "Capitalize Tab Text", capsClass: "dev-caps-tab-text" },
     { key: "devCapsGroupNames", label: "Capitalize Group Names", capsClass: "dev-caps-group-names" },
-    { key: "devCapsSettingsText", label: "Capitalize Settings Text", capsClass: "dev-caps-settings-text" }
+    { key: "devCapsSettingsText", label: "Capitalize Settings Text", capsClass: "dev-caps-settings-text" },
+    // No cssVar/capsClass -- this one's read directly (settings.devTextEditMode) by
+    // buildPanelContent()'s group-header click handler and initLabelRenameMode() rather than
+    // driving any CSS, since it changes CLICK BEHAVIOR (rename vs. collapse/toggle-through),
+    // not appearance. The checkbox itself still just needs settings[cfg.key] kept in sync,
+    // which the generic checkbox-change handler already does with no extra flag required.
+    { key: "devTextEditMode", label: "Enable Label Rename Mode" }
   ];
 
   var COLOR_CONFIG = [
@@ -2204,6 +2217,64 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     });
   }
 
+  // ---- Label Rename Mode (CLAUDE.md 12 template's "Enable Label Rename Mode") ----
+  // Lets a group title or setting label be renamed for DISPLAY only -- the underlying key
+  // (groupId / cfg.key) never changes, so nothing else about that setting's behavior, save
+  // data, or wiring is affected. Overrides live in settings._labelOverrides (a plain
+  // key->string map), so Save/Copy/Reset already cover them for free via the existing flat
+  // settings object -- no separate persistence layer needed, unlike the template's own
+  // localStorage-only devTextOverrides.
+  //
+  // Simpler than the template's own version in one real way: BUTTSONS3D always re-derives a
+  // label's DISPLAY text from an immutable source (GROUP_DEFS' def.title / CONTROL_BY_KEY's
+  // cfg.label) every time buildPanelContent()/renderControl() run, rather than mutating live
+  // DOM text in place -- so there's no need for the template's own "cache the original text
+  // the first time it's seen" mechanism (devTextOriginalFor); the real original is always
+  // just one property read away.
+  function labelTextFor(cfg) {
+    var override = settings._labelOverrides[cfg.key];
+    return override != null ? override : cfg.label;
+  }
+  function groupTitleFor(def) {
+    var override = settings._labelOverrides[def.id];
+    return override != null ? override : def.title;
+  }
+  // el: the title/label span to edit in place. key: groupId or cfg.key (settings._labelOverrides'
+  // own key). original: the real, un-overridden text (def.title / cfg.label) -- typing exactly
+  // this, or leaving it blank, clears the override rather than storing a redundant copy of it.
+  function openLabelEditFor(el, key, original) {
+    if (el.querySelector("textarea")) return;
+    var current = settings._labelOverrides[key];
+    var input = document.createElement("textarea");
+    input.rows = 1;
+    input.value = current != null ? current : original;
+    el.textContent = "";
+    el.appendChild(input);
+    input.focus();
+    input.select();
+    input.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+    input.addEventListener("click", function (ev) { ev.stopPropagation(); });
+    var settled = false;
+    function commit() {
+      if (settled) return;
+      settled = true;
+      var typed = input.value;
+      if (typed === "" || typed === original) delete settings._labelOverrides[key];
+      else settings._labelOverrides[key] = typed;
+      el.textContent = settings._labelOverrides[key] != null ? settings._labelOverrides[key] : original;
+    }
+    function cancel() {
+      if (settled) return;
+      settled = true;
+      el.textContent = current != null ? current : original;
+    }
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); input.blur(); }
+      else if (e.key === "Escape") cancel();
+    });
+  }
+
   function renderControl(cfg) {
     var row = document.createElement("div");
     row.className = "dev-row";
@@ -2231,8 +2302,14 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
         if (cfg.lockCamera) applyLockCamera();
         if (cfg.capsClass) devPanel.classList.toggle(cfg.capsClass, checkbox.checked);
       });
+      // A real span (not a bare text node), same class every other control's own label
+      // uses -- makes checkbox labels a uniform click target for Label Rename Mode too.
+      // .dev-checkbox-row's own flex `gap` already spaces it from the checkbox correctly.
+      var checkLabel = document.createElement("span");
+      checkLabel.className = "dev-setting-label";
+      checkLabel.textContent = labelTextFor(cfg);
       label.appendChild(checkbox);
-      label.appendChild(document.createTextNode(" " + cfg.label));
+      label.appendChild(checkLabel);
       row.appendChild(label);
       return row;
     }
@@ -2242,7 +2319,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       main.className = "dev-row-main dev-color-row";
       var colorLabel = document.createElement("span");
       colorLabel.className = "dev-setting-label";
-      colorLabel.textContent = cfg.label;
+      colorLabel.textContent = labelTextFor(cfg);
       var colorInput = document.createElement("input");
       colorInput.type = "color";
       colorInput.id = "color-" + cfg.key;
@@ -2265,7 +2342,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       selMain.className = "dev-row-main";
       var selLabel = document.createElement("span");
       selLabel.className = "dev-setting-label";
-      selLabel.textContent = cfg.label;
+      selLabel.textContent = labelTextFor(cfg);
       var select = document.createElement("select");
       select.className = "dev-select";
       select.id = "select-" + cfg.key;
@@ -2290,7 +2367,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
     main2.className = "dev-row-main";
     var label2 = document.createElement("span");
     label2.className = "dev-setting-label";
-    label2.textContent = cfg.label;
+    label2.textContent = labelTextFor(cfg);
     main2.appendChild(label2);
 
     var controls = document.createElement("div");
@@ -2335,7 +2412,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       grip.textContent = "☰";
       var title = document.createElement("span");
       title.className = "dev-group-title";
-      title.textContent = def.title;
+      title.textContent = groupTitleFor(def);
       var caret = document.createElement("span");
       caret.className = "dev-group-caret";
       caret.textContent = "▼";
@@ -2344,6 +2421,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
       header.appendChild(caret);
       header.addEventListener("click", function (e) {
         if (e.target === grip) return;
+        if (settings.devTextEditMode) { openLabelEditFor(title, groupId, def.title); return; }
         groupEl.classList.toggle("collapsed");
         var idx = settings._collapsedGroups.indexOf(groupId);
         if (groupEl.classList.contains("collapsed")) {
@@ -2438,6 +2516,29 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   function savePanelGeometry() {
     var rect = devPanel.getBoundingClientRect();
     settings[currentGeometryKey()] = { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+  }
+
+  // Delegated single listener (not one per row) for setting-label renames -- group-title
+  // renames are handled directly in buildPanelContent()'s own header click handler instead,
+  // since that handler already needs to branch on settings.devTextEditMode for the
+  // collapse-vs-rename choice anyway. capture:true + preventDefault/stopPropagation here
+  // specifically so clicking a CHECKBOX row's own label text doesn't also toggle the
+  // checkbox (a native <label> always click-activates its descendant/associated <input>
+  // unless the originating click is prevented before that default behavior fires).
+  function initLabelRenameMode() {
+    devPanel.addEventListener("click", function (e) {
+      if (!settings.devTextEditMode) return;
+      var label = e.target.closest(".dev-setting-label");
+      if (!label) return;
+      if (label.querySelector("textarea")) return;
+      var row = label.closest(".dev-row");
+      var key = row && row.dataset.key;
+      var cfg = key && CONTROL_BY_KEY[key];
+      if (!cfg) return;
+      e.preventDefault();
+      e.stopPropagation();
+      openLabelEditFor(label, key, cfg.label);
+    }, true);
   }
 
   function initPanelDragResize() {
@@ -2622,6 +2723,7 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
   buildPanelContent();
   initSortable();
   initPanelDragResize();
+  initLabelRenameMode();
   // Dev Panel "Scroll Strength" setting (per TEMPLATE_DEV_PANEL.html's own pattern) --
   // multiplies wheel-scroll delta inside the settings list; 1 (the default) leaves native
   // browser scrolling untouched entirely rather than intercepting the event for a no-op.
