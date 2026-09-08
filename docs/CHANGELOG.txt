@@ -2211,6 +2211,81 @@ HIGH going in (routine task), resolved with the routine push done and 2
 more data points logged for the still-open artifact question]
 
 --------------------------------------------------------------------------------
+2026-09-08 -- 05:49 AM - 05:58 AM EDT (8m31s)
+
+User: "read claude.md and update our dev panel to match the template. dont
+overwrite ouor groups or settings" -- an audit-and-fix pass against
+CLAUDE.md's Section 12 HTML dev-panel standard, explicitly scoped to
+leave all existing settings/groups/values untouched.
+
+Audited point-by-point against 12a-12o. Most was already satisfied by
+this project's own existing implementation: 4-edge + 4-corner resize with
+a proper min-size clamp, viewport-clamped title-bar drag, D-key hide
+(input-field-guarded, dev-enabled-gated), a separate top-right collapse
+button, Copy/Save/Reset already covering every input type (sliders,
+checkboxes, colors) via the flat `settings` object, drag-reorderable
+groups AND within-group settings with persisted order (_groupOrder/
+_itemOrderByGroup) and persisted collapsed state (_collapsedGroups),
+click-to-type numeric inputs with the exact spec'd auto-expanding-range
+behavior (typed value +/-20%), the built-in "Dev Panel" appearance group
+(all 9 required font-size/opacity/color controls), and correct dev-only
+gating (localhost/127.0.0.1/file:/`?dev=1`).
+
+Fixed 2 real gaps, both pure UI mechanics with zero settings-schema
+impact:
+- Added the "R" keyboard shortcut for Reset (12d) -- previously click-
+  only. Refactored the Reset button's inline handler into a shared
+  resetToSavedDefaults() function so the button and the new shortcut both
+  call the identical path, mirroring the existing D-key Hide shortcut's
+  guard pattern (ignores keystrokes while typing in an input, requires
+  dev-enabled).
+- Removed a static instructional paragraph under the action buttons
+  explaining how Save Settings writes through to git (12j: "no
+  descriptive text or instructions... unless asked"). Confirmed via grep
+  it was never updated dynamically anywhere in the code -- Save/Copy
+  status feedback already happens through the buttons' own flashButton()
+  text swap ("Saved!", "Save failed: ..."), so this paragraph was pure
+  explanatory prose with no operational role. Removed the div and its
+  now-dead CSS rule together.
+
+Verified live: had to first find and kill 3 stale/wrong processes
+squatting on port 8938 (serving a directory listing of the GLOBAL
+`.claude` folder, not this project -- leftover from earlier in this long
+multi-day session), then start this project's own dev_server.py
+correctly. Fresh reload: D-key correctly hides/shows the panel; changed
+Camera FOV to 87 via its slider, pressed R, confirmed it reset to the
+saved default (20); no new console errors beyond the known transient
+connection-reset retries and the expected local 404 on GET /api/save-
+settings.
+
+Flagged, but explicitly did NOT implement (both would require changing
+the settings data/schema itself, out of scope per this round's own "don't
+overwrite groups or settings" instruction):
+- Dev panel geometry (_panelGeometryDesktop/_panelGeometryMobile) is
+  stored in raw pixels, not %/vmin -- 12a names dev-panel geometry as its
+  own explicit example of what should scale proportionally with the
+  viewport rather than staying a fixed pixel size.
+- Camera settings (position/yaw/pitch/zoom/FOV) are shared between the
+  Desktop and Mobile tabs rather than independently adjustable -- 12f's
+  default leans toward per-device for exactly this class of size/
+  position-related setting.
+
+Committed and pushed as 74331cd (rebased onto 2 concurrent live-site Save
+Settings commits that landed mid-round, handled via stash/rebase/pop to
+preserve the user's own in-progress Rhino/Blender working files
+untouched).
+
+[Shape: existing-mechanism extension (Reset shortcut mirrors the already-
+proven Hide shortcut pattern) + dead-code removal (static text, never
+dynamically used); Files: 1 (index.html, +10/-7) + 1 CHANGELOG entry;
+Research: direct comparison against CLAUDE.md Section 12's full text,
+already loaded in context; Confidence: LOW going in (unknown gap count
+against an already-mature implementation), resolved fast since most of
+the spec was already satisfied -- 2 small real gaps found and fixed, 2
+larger schema-affecting gaps found and correctly left for a separate
+decision]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
