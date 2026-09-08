@@ -2342,6 +2342,75 @@ differ from the existing implementation), resolved fast since the change
 was purely additive CSS with no structural risk]
 
 --------------------------------------------------------------------------------
+2026-09-08 -- 06:17 AM - 06:29 AM EDT (11m54s)
+
+User: "include all Dev Panel settings per the template" -- direct
+follow-up to the prior round's CSS-only visual port, now exposing every
+remaining control TEMPLATE_DEV_PANEL.html's own DEVPANEL_STYLE_CONTROLS
+defines as real, adjustable settings in the existing "Dev Panel" group
+(read the template's own JS section defining that array in full to get
+exact ids/types/ranges/defaults, rather than guessing from the CSS var
+names alone).
+
+Added 10 new settings, all defaulting to whatever the panel already
+rendered as of the prior visual-styling round, so exposing them didn't
+itself change anything on load:
+- Dev Panel Accent Color, Dev Panel Slider Color -- colors; every place
+  that hardcoded #0ff/#3b82f6 last round (buttons, tabs, group-header
+  tint, resize-handle grips, scrollbar, value text, color-picker/click-
+  to-edit borders) now reads the corresponding CSS var instead.
+- Dev Panel Font (All Text) -- a genuinely NEW control type ("select"),
+  which this panel's rendering engine didn't support at all before
+  (only slider/checkbox/color existed) -- added a real dispatch branch
+  in renderControl(), a SELECT_CONFIG array, and an applyAllSettings()
+  sync loop mirroring COLOR_CONFIG's own already-proven pattern.
+- Button Text Border, Button Height, Scroll Strength -- 3 sliders, wired
+  into the actual button/tab CSS (padding-top/bottom, min-height) and a
+  new wheel listener on the settings list (default strength 1 leaves
+  native scrolling completely untouched, matching the template's own
+  "strength===1 means don't intercept" convention).
+- 4 independent Capitalize toggles (Button/Tab/Group/Settings Text) --
+  each toggles its own CSS class on #devPanel, matching the template's
+  own per-category "decompose, don't bundle" convention; wired through
+  both the live checkbox handler and applyAllSettings() so a loaded/
+  reset value re-applies the class, not just the checkbox's own state.
+
+Deliberately left out "Enable Label Rename Mode" -- that toggles a whole
+inline label-rename FEATURE (openDevTextEditFor et al. in the template)
+this project never ported; a checkbox for a feature that doesn't exist
+would be dead UI, so it wasn't added rather than shipped non-functional.
+
+Real bugfix found and fixed along the way, not the original ask but
+directly relevant since 2 new sliders reuse the exact same mechanism:
+applyCssVar() was setting every px-based custom property to a bare
+unitless number (e.g. "13" instead of "13px") -- confirmed live this
+silently broke ALL 5 pre-existing font-size sliders (Dev Panel Title/
+Tab/Group/Setting/Body Font Size never had any visible effect; the panel
+was rendering at the browser's own default font-size the entire time,
+regardless of any of these settings' actual values). Fixed by appending
+"px" only when cfg.unit === "px" -- benefits the 5 already-existing
+sliders along with the 2 new px-based ones added this round.
+
+Verified live: all 19 Dev Panel controls render; individually tested
+accent color, capitalize-button-text, and font-family via direct DOM
+dispatch, each producing the correct computed-style change; confirmed
+the px-unit bugfix actually resizes the title text now (13px -> 24px via
+getComputedStyle, previously stuck at the browser's 16px default no
+matter the slider position); R-key Reset correctly reverts every new
+control to its default; no unintended settings-file changes from
+testing (confirmed via `git status`).
+
+[Shape: existing-mechanism extension (checkbox/color/slider dispatch
+patterns already established) plus one genuinely new control type
+(select) built from scratch by mirroring an already-proven sibling
+pattern, plus an incidentally-discovered real bug fixed in the same
+mechanism being extended; Files: 1 (index.html, +154/-35) + 1 CHANGELOG
+entry; Research: direct reading of TEMPLATE_DEV_PANEL.html's own
+DEVPANEL_STYLE_CONTROLS definition; Confidence: LOW going in (unknown
+control count/types before reading the template's JS), resolved with a
+clear, complete control list and a real incidental bugfix along the way]
+
+--------------------------------------------------------------------------------
 <next entry follows the same divider + dated-header pattern>
 
 ================================================================================
